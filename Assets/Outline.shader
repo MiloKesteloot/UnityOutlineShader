@@ -25,7 +25,7 @@
 			float4 _MainTex_TexelSize;
 
 			float _Scale;
-			float4 _Color;
+			float4 _OutlineColor;
 
 			float _DepthThreshold;
 			float _DepthNormalThreshold;
@@ -161,7 +161,7 @@
 
 				float edge = max(max(edgeDepth, edgeNormal), edgeLuminance);
 
-				float4 edgeColor = float4(_Color.rgb, _Color.a * edge);
+				float4 edgeColor = float4(_OutlineColor.rgb, _OutlineColor.a * edge);
 
 				float4 color = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.texcoord);
 

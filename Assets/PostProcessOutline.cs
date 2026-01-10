@@ -32,7 +32,7 @@ public sealed class PostProcessOutlineRenderer : PostProcessEffectRenderer<PostP
         sheet.properties.SetFloat("_DepthNormalThreshold", settings.depthNormalThreshold);
         sheet.properties.SetFloat("_DepthNormalThresholdScale", settings.depthNormalThresholdScale);
         sheet.properties.SetFloat("_NormalThreshold", settings.normalThreshold);
-        sheet.properties.SetColor("_Color", settings.color);
+        sheet.properties.SetColor("_OutlineColor", settings.color);
 
         Matrix4x4 clipToView = GL.GetGPUProjectionMatrix(context.camera.projectionMatrix, true).inverse;
         sheet.properties.SetMatrix("_ClipToView", clipToView);
