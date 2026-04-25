@@ -19,3 +19,5 @@ MonoBehaviour:
     outlineColor: {r: 0, g: 0.5, b: 0, a: 1}
   - surfaceColor: {r: 0, g: 0, b: 1, a: 1}
     outlineColor: {r: 0, g: 0, b: 0.5, a: 1}
+  - surfaceColor: {r: 0.654902, g: 0.654902, b: 0.654902, a: 1}
+    outlineColor: {r: 1, g: 0, b: 1, a: 1}

@@ -57,6 +57,9 @@ public sealed class PostProcessOutlineRenderer : PostProcessEffectRenderer<PostP
 {
     public override void Render(PostProcessRenderContext context)
     {
+        context.camera.depthTextureMode |= DepthTextureMode.Depth;
+        context.camera.depthTextureMode |= DepthTextureMode.DepthNormals;
+
         var sheet = context.propertySheets.Get(Shader.Find("Hidden/Roystan/Outline Post Process"));
 
         sheet.properties.SetFloat("_Scale",                     settings.scale);

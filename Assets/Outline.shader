@@ -18,12 +18,12 @@ Shader "Hidden/Roystan/Outline Post Process"
             float4 _MainTex_TexelSize;
 
             float _Scale;
-
             float _DepthThreshold;
             float _DepthNormalThreshold;
             float _DepthNormalThresholdScale;
             float _NormalThreshold;
             float _ColorTolerance;
+            float _DepthContactThreshold;
 
             float4x4 _ClipToView;
 
@@ -31,18 +31,10 @@ Shader "Hidden/Roystan/Outline Post Process"
             float4 _SurfaceColors[16];
             float4 _OutlineColors[16];
 
-            // How close two depth values must be to treat the edge as a contact
-            // edge (same plane) rather than a silhouette (one in front of another).
-            // Tweak if needed — lower = stricter, higher = more edges treated as contact.
-            #define DEPTH_CONTACT_THRESHOLD 0.001
-
-            // Returns the priority index (0 = highest) of the closest registered color,
-            // or -1 if no color is within _ColorTolerance.
             int GetColorPriority(float3 pixel)
             {
                 int bestIndex = -1;
                 float bestDist = _ColorTolerance;
-
                 for (int i = 0; i < _ColorCount; i++)
                 {
                     float dist = length(pixel - _SurfaceColors[i].rgb);
@@ -52,7 +44,6 @@ Shader "Hidden/Roystan/Outline Post Process"
                         bestIndex = i;
                     }
                 }
-
                 return bestIndex;
             }
 
@@ -80,11 +71,9 @@ Shader "Hidden/Roystan/Outline Post Process"
                 o.vertex = float4(v.vertex.xy, 0.0, 1.0);
                 o.texcoord = TransformTriangleVertexToUV(v.vertex.xy);
                 o.viewSpaceDir = mul(_ClipToView, o.vertex).xyz;
-
             #if UNITY_UV_STARTS_AT_TOP
                 o.texcoord = o.texcoord * float2(1.0, -1.0) + float2(0.0, 1.0);
             #endif
-
                 o.texcoordStereo = TransformStereoScreenSpaceTex(o.texcoord, 1.0);
                 return o;
             }
@@ -99,19 +88,18 @@ Shader "Hidden/Roystan/Outline Post Process"
                 float2 bottomRightUV = i.texcoord + float2( _MainTex_TexelSize.x * halfScaleCeil, -_MainTex_TexelSize.y * halfScaleFloor);
                 float2 topLeftUV     = i.texcoord + float2(-_MainTex_TexelSize.x * halfScaleFloor,  _MainTex_TexelSize.y * halfScaleCeil);
 
-                // --- Depth ---
-                float depth0 = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, sampler_CameraDepthTexture, bottomLeftUV).r;
-                float depth1 = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, sampler_CameraDepthTexture, topRightUV).r;
-                float depth2 = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, sampler_CameraDepthTexture, bottomRightUV).r;
-                float depth3 = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, sampler_CameraDepthTexture, topLeftUV).r;
+                // Linear01Depth is built into StdLib.hlsl and handles reversed Z correctly.
+                // Returns 0 = camera, 1 = far plane. Smaller value = closer to camera.
+                float depth0 = Linear01Depth(SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, sampler_CameraDepthTexture, bottomLeftUV).r);
+                float depth1 = Linear01Depth(SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, sampler_CameraDepthTexture, topRightUV).r);
+                float depth2 = Linear01Depth(SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, sampler_CameraDepthTexture, bottomRightUV).r);
+                float depth3 = Linear01Depth(SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, sampler_CameraDepthTexture, topLeftUV).r);
 
-                // --- Normals ---
                 float3 normal0 = SAMPLE_TEXTURE2D(_CameraNormalsTexture, sampler_CameraNormalsTexture, bottomLeftUV).rgb;
                 float3 normal1 = SAMPLE_TEXTURE2D(_CameraNormalsTexture, sampler_CameraNormalsTexture, topRightUV).rgb;
                 float3 normal2 = SAMPLE_TEXTURE2D(_CameraNormalsTexture, sampler_CameraNormalsTexture, bottomRightUV).rgb;
                 float3 normal3 = SAMPLE_TEXTURE2D(_CameraNormalsTexture, sampler_CameraNormalsTexture, topLeftUV).rgb;
 
-                // --- Colors ---
                 float4 color0 = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, bottomLeftUV);
                 float4 color1 = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, topRightUV);
                 float4 color2 = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, bottomRightUV);
@@ -123,7 +111,6 @@ Shader "Hidden/Roystan/Outline Post Process"
                 float normalThreshold01 = saturate((NdotV - _DepthNormalThreshold) / (1 - _DepthNormalThreshold));
                 float normalThreshold   = normalThreshold01 * _DepthNormalThresholdScale + 1;
                 float depthThreshold    = _DepthThreshold * depth0 * normalThreshold;
-
                 float edgeDepth = sqrt(pow(depth1 - depth0, 2) + pow(depth3 - depth2, 2)) * 100;
                 edgeDepth = edgeDepth > depthThreshold ? 1 : 0;
 
@@ -141,68 +128,55 @@ Shader "Hidden/Roystan/Outline Post Process"
                 float edgeLuminance = sqrt(pow(lum1 - lum0, 2) + pow(lum3 - lum2, 2));
                 edgeLuminance = edgeLuminance > 0.5 ? 1 : 0;
 
-                float edge = max(max(edgeDepth, edgeNormal), edgeLuminance);
-
+                // float edge = max(max(edgeDepth, edgeNormal), edgeLuminance);
+                float edge = edgeDepth;
+                
                 // ---------------------------------------------------------------
                 // PRIORITY SELECTION
                 //
-                // For each Roberts cross diagonal pair (A: 0 vs 1, B: 2 vs 3):
-                //
-                //   - SILHOUETTE edge (depths differ): the closer sample is the
-                //     surface we're on — use it exclusively. Depth wins, priority
-                //     is irrelevant. A close green in front of a far red gets a
-                //     dark green outline.
-                //
-                //   - CONTACT edge (depths similar): both surfaces are coplanar.
-                //     Check both samples and let priority decide. A red touching
-                //     a green gets a dark red outline (red = index 0).
-                //
-                // The winner across both pairs is the lowest priority index found.
+                // Linear01Depth: 0 = near, 1 = far. Nearest = smallest value.
+                // If depth spread across samples exceeds threshold = silhouette.
+                // Silhouette: use nearest sample's color only (smallest depth).
+                // Contact: use highest priority color across all samples.
                 // ---------------------------------------------------------------
+
+                float minDepth = min(min(depth0, depth1), min(depth2, depth3));
+                float maxDepth = max(max(depth0, depth1), max(depth2, depth3));
+                bool isSilhouette = (maxDepth - minDepth) > _DepthContactThreshold;
 
                 int winnerIndex = -1;
 
-                // --- Pair A: bottomLeft (0) vs topRight (1) ---
-                float depthDiffA = abs(depth1 - depth0);
-                if (depthDiffA < DEPTH_CONTACT_THRESHOLD)
+                if (isSilhouette)
                 {
-                    // Contact edge — priority decides between both samples
-                    int pA0 = GetColorPriority(color0.rgb);
-                    int pA1 = GetColorPriority(color1.rgb);
-                    int bestA = -1;
-                    if (pA0 >= 0) bestA = pA0;
-                    if (pA1 >= 0 && (bestA < 0 || pA1 < bestA)) bestA = pA1;
-                    if (bestA >= 0 && (winnerIndex < 0 || bestA < winnerIndex)) winnerIndex = bestA;
+                    // Nearest surface = smallest Linear01Depth value.
+                    float4 nearestColor = color0;
+                    float nearestDepth = depth0;
+                    if (depth1 < nearestDepth) { nearestDepth = depth1; nearestColor = color1; }
+                    if (depth2 < nearestDepth) { nearestDepth = depth2; nearestColor = color2; }
+                    if (depth3 < nearestDepth) { nearestDepth = depth3; nearestColor = color3; }
+                    winnerIndex = GetColorPriority(nearestColor.rgb);
                 }
                 else
                 {
-                    // Silhouette edge — closer sample wins outright
-                    float4 nearColor = (depth0 < depth1) ? color0 : color1;
-                    int pA = GetColorPriority(nearColor.rgb);
-                    if (pA >= 0 && (winnerIndex < 0 || pA < winnerIndex)) winnerIndex = pA;
-                }
-
-                // --- Pair B: bottomRight (2) vs topLeft (3) ---
-                float depthDiffB = abs(depth3 - depth2);
-                if (depthDiffB < DEPTH_CONTACT_THRESHOLD)
-                {
-                    // Contact edge — priority decides between both samples
-                    int pB2 = GetColorPriority(color2.rgb);
-                    int pB3 = GetColorPriority(color3.rgb);
-                    int bestB = -1;
-                    if (pB2 >= 0) bestB = pB2;
-                    if (pB3 >= 0 && (bestB < 0 || pB3 < bestB)) bestB = pB3;
-                    if (bestB >= 0 && (winnerIndex < 0 || bestB < winnerIndex)) winnerIndex = bestB;
-                }
-                else
-                {
-                    // Silhouette edge — closer sample wins outright
-                    float4 nearColor = (depth2 < depth3) ? color2 : color3;
-                    int pB = GetColorPriority(nearColor.rgb);
-                    if (pB >= 0 && (winnerIndex < 0 || pB < winnerIndex)) winnerIndex = pB;
+                    // Contact edge — lowest priority index wins.
+                    int p0 = GetColorPriority(color0.rgb);
+                    int p1 = GetColorPriority(color1.rgb);
+                    int p2 = GetColorPriority(color2.rgb);
+                    int p3 = GetColorPriority(color3.rgb);
+                    if (p0 >= 0) winnerIndex = p0;
+                    if (p1 >= 0 && (winnerIndex < 0 || p1 < winnerIndex)) winnerIndex = p1;
+                    if (p2 >= 0 && (winnerIndex < 0 || p2 < winnerIndex)) winnerIndex = p2;
+                    if (p3 >= 0 && (winnerIndex < 0 || p3 < winnerIndex)) winnerIndex = p3;
                 }
 
                 float4 sceneColor = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.texcoord);
+
+                // float4 rawSample = SAMPLE_TEXTURE2D(_CameraDepthTexture, sampler_CameraDepthTexture, i.texcoord);
+                // return rawSample;
+
+                // depth0 = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, sampler_CameraDepthTexture, bottomLeftUV).r;
+                // return float4(depth0, depth0, depth0, 1);
+                return float4(depth0, depth0, depth0, 1);
 
                 if (winnerIndex < 0 || edge < 0.5)
                     return sceneColor;

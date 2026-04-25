@@ -8,6 +8,9 @@ public sealed class OutlineColorTableBinder : MonoBehaviour
     [Range(0.01f, 0.5f)]
     public float colorTolerance = 0.05f;
 
+    [Range(0.0001f, 0.01f)]
+    public float depthContactThreshold = 0.001f;
+
     private const int MaxColors = 16;
     private readonly Vector4[] _surfaceColors = new Vector4[MaxColors];
     private readonly Vector4[] _outlineColors  = new Vector4[MaxColors];
@@ -36,5 +39,6 @@ public sealed class OutlineColorTableBinder : MonoBehaviour
         Shader.SetGlobalVectorArray("_SurfaceColors", _surfaceColors);
         Shader.SetGlobalVectorArray("_OutlineColors",  _outlineColors);
         Shader.SetGlobalFloat("_ColorTolerance",       colorTolerance);
+        Shader.SetGlobalFloat("_DepthContactThreshold", depthContactThreshold);
     }
 }   
