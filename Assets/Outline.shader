@@ -128,8 +128,8 @@ Shader "Hidden/Roystan/Outline Post Process"
                 float edgeLuminance = sqrt(pow(lum1 - lum0, 2) + pow(lum3 - lum2, 2));
                 edgeLuminance = edgeLuminance > 0.5 ? 1 : 0;
 
-                // float edge = max(max(edgeDepth, edgeNormal), edgeLuminance);
-                float edge = edgeDepth;
+                float edge = max(max(edgeDepth, edgeNormal), edgeLuminance);
+                // float edge = edgeDepth;
                 
                 // ---------------------------------------------------------------
                 // PRIORITY SELECTION
@@ -170,13 +170,6 @@ Shader "Hidden/Roystan/Outline Post Process"
                 }
 
                 float4 sceneColor = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.texcoord);
-
-                // float4 rawSample = SAMPLE_TEXTURE2D(_CameraDepthTexture, sampler_CameraDepthTexture, i.texcoord);
-                // return rawSample;
-
-                // depth0 = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, sampler_CameraDepthTexture, bottomLeftUV).r;
-                // return float4(depth0, depth0, depth0, 1);
-                return float4(depth0, depth0, depth0, 1);
 
                 if (winnerIndex < 0 || edge < 0.5)
                     return sceneColor;
