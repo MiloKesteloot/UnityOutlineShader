@@ -28,14 +28,20 @@ Shader "Hidden/Roystan/Outline Post Process"
             float4x4 _ClipToView;
 
             int _ColorCount;
-            float4 _SurfaceColors[16];
-            float4 _OutlineColors[16];
+            float4 _SurfaceColors[32];
+            float4 _OutlineColors[32];
 
+            // NOTE: Color matching is performed in the color space of _MainTex (typically gamma
+            // in Unity's built-in pipeline). _SurfaceColors set via the inspector are also
+            // gamma-encoded in that case, so matching is consistent. If you switch to a linear
+            // color space pipeline, verify that both sides agree on encoding.
             int GetColorPriority(float3 pixel)
             {
                 int bestIndex = -1;
                 float bestDist = _ColorTolerance;
-                for (int i = 0; i < _ColorCount; i++)
+                // Clamped to 32 to guard against misconfigured _ColorCount exceeding the array size.
+                int count = min(_ColorCount, 32);
+                for (int i = 0; i < count; i++)
                 {
                     float dist = length(pixel - _SurfaceColors[i].rgb);
                     if (dist < bestDist)
@@ -106,15 +112,21 @@ Shader "Hidden/Roystan/Outline Post Process"
                 float4 color3 = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, topLeftUV);
 
                 // --- Depth edge ---
+                // viewSpaceDir is interpolated across the triangle so it must be normalized
+                // before use in the dot product, otherwise NdotV will be incorrect off-centre.
                 float3 viewNormal = normal0 * 2 - 1;
-                float NdotV = 1 - dot(viewNormal, -i.viewSpaceDir);
-                float normalThreshold01 = saturate((NdotV - _DepthNormalThreshold) / (1 - _DepthNormalThreshold));
+                float NdotV = 1 - dot(viewNormal, -normalize(i.viewSpaceDir));
+                // Guard against divide-by-zero when _DepthNormalThreshold is exactly 1.
+                float depthNormalDenom = max(1 - _DepthNormalThreshold, 1e-5);
+                float normalThreshold01 = saturate((NdotV - _DepthNormalThreshold) / depthNormalDenom);
                 float normalThreshold   = normalThreshold01 * _DepthNormalThresholdScale + 1;
                 float depthThreshold    = _DepthThreshold * depth0 * normalThreshold;
                 float edgeDepth = sqrt(pow(depth1 - depth0, 2) + pow(depth3 - depth2, 2)) * 100;
                 edgeDepth = edgeDepth > depthThreshold ? 1 : 0;
 
                 // --- Normal edge ---
+                // Normal differences are computed in [0,1] space; the *2-1 decode cancels out
+                // in subtraction so this is equivalent to comparing in [-1,1] space.
                 float3 normalDiff0 = normal1 - normal0;
                 float3 normalDiff1 = normal3 - normal2;
                 float edgeNormal = sqrt(dot(normalDiff0, normalDiff0) + dot(normalDiff1, normalDiff1));
@@ -151,17 +163,18 @@ Shader "Hidden/Roystan/Outline Post Process"
                 if (isSilhouette)
                 {
                     // Highest raw depth value = nearest to camera.
-                    float4 nearestColor = color0;
+                    // Reuse already-computed priorities rather than calling GetColorPriority again.
+                    int p0 = centerPriority;
                     float nearestDepth = depth0;
-                    if (depth1 > nearestDepth) { nearestDepth = depth1; nearestColor = color1; }
-                    if (depth2 > nearestDepth) { nearestDepth = depth2; nearestColor = color2; }
-                    if (depth3 > nearestDepth) { nearestDepth = depth3; nearestColor = color3; }
-                    winnerIndex = GetColorPriority(nearestColor.rgb);
+                    winnerIndex = p0;
+                    if (depth1 > nearestDepth) { nearestDepth = depth1; winnerIndex = p1; }
+                    if (depth2 > nearestDepth) { nearestDepth = depth2; winnerIndex = p2; }
+                    if (depth3 > nearestDepth) { nearestDepth = depth3; winnerIndex = p3; }
                 }
                 else
                 {
                     // Contact edge — lowest priority index wins.
-                    int p0 = GetColorPriority(color0.rgb);
+                    int p0 = centerPriority;
                     if (p0 >= 0) winnerIndex = p0;
                     if (p1 >= 0 && (winnerIndex < 0 || p1 < winnerIndex)) winnerIndex = p1;
                     if (p2 >= 0 && (winnerIndex < 0 || p2 < winnerIndex)) winnerIndex = p2;
@@ -173,7 +186,7 @@ Shader "Hidden/Roystan/Outline Post Process"
                 if (winnerIndex < 0 || edge < 0.5)
                     return sceneColor;
 
-                float4 outlineColor = float4(_OutlineColors[winnerIndex].rgb, _OutlineColors[winnerIndex].a * edge);
+                float4 outlineColor = _OutlineColors[winnerIndex];
                 return alphaBlend(outlineColor, sceneColor);
             }
             ENDHLSL
