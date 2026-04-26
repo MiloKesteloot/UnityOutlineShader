@@ -86,62 +86,88 @@ Shader "Hidden/Roystan/Outline Post Process"
 
             float4 Frag(Varyings i) : SV_Target
             {
-                float halfScaleFloor = floor(_Scale * 0.5);
-                float halfScaleCeil  = ceil(_Scale * 0.5);
+                // 8 evenly spaced directions around a circle (every 45 degrees).
+                // Diagonal offsets are scaled by 1/sqrt(2) so all samples sit on
+                // a true circle of radius _Scale pixels rather than a square.
+                static const float DIAG = 0.70710678;
+                static const float2 RING_DIRS[8] =
+                {
+                    float2( 1,     0    ),  // E
+                    float2( DIAG,  DIAG ),  // NE
+                    float2( 0,     1    ),  // N
+                    float2(-DIAG,  DIAG ),  // NW
+                    float2(-1,     0    ),  // W
+                    float2(-DIAG, -DIAG ),  // SW
+                    float2( 0,    -1    ),  // S
+                    float2( DIAG, -DIAG ),  // SE
+                };
 
-                float2 bottomLeftUV  = i.texcoord - float2(_MainTex_TexelSize.x, _MainTex_TexelSize.y) * halfScaleFloor;
-                float2 topRightUV    = i.texcoord + float2(_MainTex_TexelSize.x, _MainTex_TexelSize.y) * halfScaleCeil;
-                float2 bottomRightUV = i.texcoord + float2( _MainTex_TexelSize.x * halfScaleCeil, -_MainTex_TexelSize.y * halfScaleFloor);
-                float2 topLeftUV     = i.texcoord + float2(-_MainTex_TexelSize.x * halfScaleFloor,  _MainTex_TexelSize.y * halfScaleCeil);
+                float2 texelRadius = _MainTex_TexelSize.xy * _Scale;
 
-                // Raw depth — no linearization. Values are near 0 for far objects,
-                // slightly higher for near objects. Differences are small but real.
-                float depth0 = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, sampler_CameraDepthTexture, bottomLeftUV).r;
-                float depth1 = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, sampler_CameraDepthTexture, topRightUV).r;
-                float depth2 = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, sampler_CameraDepthTexture, bottomRightUV).r;
-                float depth3 = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, sampler_CameraDepthTexture, topLeftUV).r;
+                // Sample the true center pixel for depth, normal, and color.
+                float  centerDepth  = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, sampler_CameraDepthTexture, i.texcoord).r;
+                float3 centerNormal = SAMPLE_TEXTURE2D(_CameraNormalsTexture, sampler_CameraNormalsTexture, i.texcoord).rgb;
+                float4 centerColor  = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.texcoord);
 
-                float3 normal0 = SAMPLE_TEXTURE2D(_CameraNormalsTexture, sampler_CameraNormalsTexture, bottomLeftUV).rgb;
-                float3 normal1 = SAMPLE_TEXTURE2D(_CameraNormalsTexture, sampler_CameraNormalsTexture, topRightUV).rgb;
-                float3 normal2 = SAMPLE_TEXTURE2D(_CameraNormalsTexture, sampler_CameraNormalsTexture, bottomRightUV).rgb;
-                float3 normal3 = SAMPLE_TEXTURE2D(_CameraNormalsTexture, sampler_CameraNormalsTexture, topLeftUV).rgb;
+                // Sample the 8 ring positions.
+                float  ringDepth [8];
+                float3 ringNormal[8];
+                float4 ringColor [8];
 
-                float4 color0 = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, bottomLeftUV);
-                float4 color1 = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, topRightUV);
-                float4 color2 = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, bottomRightUV);
-                float4 color3 = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, topLeftUV);
+                for (int s = 0; s < 8; s++)
+                {
+                    float2 uv = i.texcoord + RING_DIRS[s] * texelRadius;
+                    ringDepth [s] = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, sampler_CameraDepthTexture, uv).r;
+                    ringNormal[s] = SAMPLE_TEXTURE2D(_CameraNormalsTexture, sampler_CameraNormalsTexture, uv).rgb;
+                    ringColor [s] = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, uv);
+                }
 
                 // --- Depth edge ---
-                // viewSpaceDir is interpolated across the triangle so it must be normalized
-                // before use in the dot product, otherwise NdotV will be incorrect off-centre.
-                float3 viewNormal = normal0 * 2 - 1;
+                // Build the adaptive threshold from the center normal and view direction.
+                // viewSpaceDir is interpolated across the triangle so it must be normalized.
+                float3 viewNormal = centerNormal * 2 - 1;
                 float NdotV = 1 - dot(viewNormal, -normalize(i.viewSpaceDir));
                 // Guard against divide-by-zero when _DepthNormalThreshold is exactly 1.
                 float depthNormalDenom = max(1 - _DepthNormalThreshold, 1e-5);
                 float normalThreshold01 = saturate((NdotV - _DepthNormalThreshold) / depthNormalDenom);
                 float normalThreshold   = normalThreshold01 * _DepthNormalThresholdScale + 1;
-                float depthThreshold    = _DepthThreshold * depth0 * normalThreshold;
-                float edgeDepth = sqrt(pow(depth1 - depth0, 2) + pow(depth3 - depth2, 2)) * 100;
-                edgeDepth = edgeDepth > depthThreshold ? 1 : 0;
+                float depthThreshold    = _DepthThreshold * centerDepth * normalThreshold;
+
+                // Compare each ring sample against the true center and take the max difference.
+                float maxDepthDiff = 0;
+                for (int d = 0; d < 8; d++)
+                    maxDepthDiff = max(maxDepthDiff, abs(ringDepth[d] - centerDepth));
+                float edgeDepth = (maxDepthDiff * 100) > depthThreshold ? 1 : 0;
 
                 // --- Normal edge ---
                 // Normal differences are computed in [0,1] space; the *2-1 decode cancels out
                 // in subtraction so this is equivalent to comparing in [-1,1] space.
-                float3 normalDiff0 = normal1 - normal0;
-                float3 normalDiff1 = normal3 - normal2;
-                float edgeNormal = sqrt(dot(normalDiff0, normalDiff0) + dot(normalDiff1, normalDiff1));
-                edgeNormal = edgeNormal > _NormalThreshold ? 1 : 0;
+                // Compare each ring sample against the true center and take the max difference.
+                float maxNormalDiff = 0;
+                for (int n = 0; n < 8; n++)
+                {
+                    float3 diff = ringNormal[n] - centerNormal;
+                    maxNormalDiff = max(maxNormalDiff, dot(diff, diff));
+                }
+                float edgeNormal = sqrt(maxNormalDiff) > _NormalThreshold ? 1 : 0;
 
                 // --- Color edge ---
-                // Fires when two samples match different registered colors.
+                // Fires when any ring sample matches a different registered color than the center.
                 // This catches edges like red vs blue that have similar luminance.
-                int centerPriority = GetColorPriority(color0.rgb);
-                int p1 = GetColorPriority(color1.rgb);
-                int p2 = GetColorPriority(color2.rgb);
-                int p3 = GetColorPriority(color3.rgb);
+                int centerPriority = GetColorPriority(centerColor.rgb);
+                int ringPriority[8];
+                for (int c = 0; c < 8; c++)
+                    ringPriority[c] = GetColorPriority(ringColor[c].rgb);
+
                 float edgeColor = 0;
-                if (centerPriority != p1 || centerPriority != p2 || centerPriority != p3)
-                    edgeColor = 1;
+                for (int e = 0; e < 8; e++)
+                {
+                    if (ringPriority[e] != centerPriority)
+                    {
+                        edgeColor = 1;
+                        break;
+                    }
+                }
 
                 float edge = max(max(edgeDepth, edgeNormal), edgeColor);
 
@@ -154,8 +180,13 @@ Shader "Hidden/Roystan/Outline Post Process"
                 // Contact: lowest priority index across all samples wins.
                 // ---------------------------------------------------------------
 
-                float minDepth = min(min(depth0, depth1), min(depth2, depth3));
-                float maxDepth = max(max(depth0, depth1), max(depth2, depth3));
+                float minDepth = centerDepth;
+                float maxDepth = centerDepth;
+                for (int md = 0; md < 8; md++)
+                {
+                    minDepth = min(minDepth, ringDepth[md]);
+                    maxDepth = max(maxDepth, ringDepth[md]);
+                }
                 bool isSilhouette = (maxDepth - minDepth) > _DepthContactThreshold;
 
                 int winnerIndex = -1;
@@ -163,31 +194,34 @@ Shader "Hidden/Roystan/Outline Post Process"
                 if (isSilhouette)
                 {
                     // Highest raw depth value = nearest to camera.
-                    // Reuse already-computed priorities rather than calling GetColorPriority again.
-                    int p0 = centerPriority;
-                    float nearestDepth = depth0;
-                    winnerIndex = p0;
-                    if (depth1 > nearestDepth) { nearestDepth = depth1; winnerIndex = p1; }
-                    if (depth2 > nearestDepth) { nearestDepth = depth2; winnerIndex = p2; }
-                    if (depth3 > nearestDepth) { nearestDepth = depth3; winnerIndex = p3; }
+                    // Start with the center as the initial nearest candidate.
+                    float nearestDepth = centerDepth;
+                    winnerIndex = centerPriority;
+                    for (int si = 0; si < 8; si++)
+                    {
+                        if (ringDepth[si] > nearestDepth)
+                        {
+                            nearestDepth = ringDepth[si];
+                            winnerIndex  = ringPriority[si];
+                        }
+                    }
                 }
                 else
                 {
                     // Contact edge — lowest priority index wins.
-                    int p0 = centerPriority;
-                    if (p0 >= 0) winnerIndex = p0;
-                    if (p1 >= 0 && (winnerIndex < 0 || p1 < winnerIndex)) winnerIndex = p1;
-                    if (p2 >= 0 && (winnerIndex < 0 || p2 < winnerIndex)) winnerIndex = p2;
-                    if (p3 >= 0 && (winnerIndex < 0 || p3 < winnerIndex)) winnerIndex = p3;
+                    if (centerPriority >= 0) winnerIndex = centerPriority;
+                    for (int ci = 0; ci < 8; ci++)
+                    {
+                        if (ringPriority[ci] >= 0 && (winnerIndex < 0 || ringPriority[ci] < winnerIndex))
+                            winnerIndex = ringPriority[ci];
+                    }
                 }
 
-                float4 sceneColor = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.texcoord);
-
                 if (winnerIndex < 0 || edge < 0.5)
-                    return sceneColor;
+                    return centerColor;
 
                 float4 outlineColor = _OutlineColors[winnerIndex];
-                return alphaBlend(outlineColor, sceneColor);
+                return alphaBlend(outlineColor, centerColor);
             }
             ENDHLSL
         }

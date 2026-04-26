@@ -186,6 +186,11 @@ PrefabInstance:
       propertyPath: m_Name
       value: BackgroundBuilding1 (1)
       objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: a55a16fd0ef84354baa4d301be1d5440,
+        type: 3}
+      propertyPath: m_IsActive
+      value: 1
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -1047,7 +1052,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   colorTable: {fileID: 11400000, guid: 16c568fe1c4a0aa439fc6c398bbc1ec4, type: 2}
   colorTolerance: 0.1
-  depthContactThreshold: 0.0001
+  depthContactThreshold: 0.01
 --- !u!1 &1144636803
 GameObject:
   m_ObjectHideFlags: 0
