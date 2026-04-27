@@ -130,6 +130,20 @@ Shader "Hidden/Roystan/Outline Post Process"
                     ringColor [s] = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, uv);
                 }
 
+                // Linearize all depths once here — used for both edge detection and priority
+                // selection below. Eye-space depth is in world units so thresholds are
+                // consistent regardless of how far the object is from the camera.
+                float linearCenterDepth = LinearizeDepth(centerDepth);
+                float linearRingDepth[8];
+                float linearMinDepth = linearCenterDepth;
+                float linearMaxDepth = linearCenterDepth;
+                for (int ld = 0; ld < 8; ld++)
+                {
+                    linearRingDepth[ld] = LinearizeDepth(ringDepth[ld]);
+                    linearMinDepth = min(linearMinDepth, linearRingDepth[ld]);
+                    linearMaxDepth = max(linearMaxDepth, linearRingDepth[ld]);
+                }
+
                 // --- Depth edge ---
                 // Build the adaptive threshold from the center normal and view direction.
                 // viewSpaceDir is interpolated across the triangle so it must be normalized.
@@ -139,13 +153,12 @@ Shader "Hidden/Roystan/Outline Post Process"
                 float depthNormalDenom = max(1 - _DepthNormalThreshold, 1e-5);
                 float normalThreshold01 = saturate((NdotV - _DepthNormalThreshold) / depthNormalDenom);
                 float normalThreshold   = normalThreshold01 * _DepthNormalThresholdScale + 1;
-                float depthThreshold    = _DepthThreshold * centerDepth * normalThreshold;
 
-                // Compare each ring sample against the true center and take the max difference.
+                // Compare in eye-space (world units) so the threshold is distance-independent.
                 float maxDepthDiff = 0;
                 for (int d = 0; d < 8; d++)
-                    maxDepthDiff = max(maxDepthDiff, abs(ringDepth[d] - centerDepth));
-                float edgeDepth = (maxDepthDiff * 100) > depthThreshold ? 1 : 0;
+                    maxDepthDiff = max(maxDepthDiff, abs(linearRingDepth[d] - linearCenterDepth));
+                float edgeDepth = maxDepthDiff > (_DepthThreshold * normalThreshold) ? 1 : 0;
 
                 // --- Normal edge ---
                 // Normal differences are computed in [0,1] space; the *2-1 decode cancels out
@@ -182,27 +195,11 @@ Shader "Hidden/Roystan/Outline Post Process"
                 // ---------------------------------------------------------------
                 // PRIORITY SELECTION
                 //
-                // Linearized depth: smaller value = nearer to camera (eye space).
-                // Raw depth is non-linear — two surfaces the same world-space distance
-                // apart will have a much smaller raw depth difference when far from the
-                // camera than when close. Linearizing makes _DepthContactThreshold a
-                // consistent world-space quantity regardless of camera distance.
-                //
                 // If linear depth spread exceeds _DepthContactThreshold = silhouette.
                 // Silhouette: nearest sample (smallest linear depth) wins outright.
                 // Contact:    lowest priority index across all samples wins.
                 // ---------------------------------------------------------------
 
-                float linearCenterDepth = LinearizeDepth(centerDepth);
-                float linearMinDepth = linearCenterDepth;
-                float linearMaxDepth = linearCenterDepth;
-                float linearRingDepth[8];
-                for (int md = 0; md < 8; md++)
-                {
-                    linearRingDepth[md] = LinearizeDepth(ringDepth[md]);
-                    linearMinDepth = min(linearMinDepth, linearRingDepth[md]);
-                    linearMaxDepth = max(linearMaxDepth, linearRingDepth[md]);
-                }
                 bool isSilhouette = (linearMaxDepth - linearMinDepth) > _DepthContactThreshold;
 
                 int winnerIndex = -1;
