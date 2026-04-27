@@ -8,7 +8,7 @@ public sealed class OutlineColorTableBinder : MonoBehaviour
     [Range(0.01f, 0.5f)]
     public float colorTolerance = 0.05f;
 
-    [Range(0.0001f, 0.01f)]
+    [Range(0.0001f, 10.0f)]
     public float depthContactThreshold = 0.001f;
 
     private const int MaxColors = 16;

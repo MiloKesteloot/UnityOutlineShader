@@ -215,7 +215,7 @@ Shader "Hidden/Roystan/Outline Post Process"
                     winnerIndex = centerPriority;
                     for (int si = 0; si < 8; si++)
                     {
-                        if (linearRingDepth[si] < nearestLinearDepth)
+                        if (linearRingDepth[si] < nearestLinearDepth && ringPriority[si] >= 0)
                         {
                             nearestLinearDepth = linearRingDepth[si];
                             winnerIndex        = ringPriority[si];
