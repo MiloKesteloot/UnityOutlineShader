@@ -31,6 +31,14 @@ Shader "Hidden/Roystan/Outline Post Process"
             float4 _SurfaceColors[32];
             float4 _OutlineColors[32];
 
+            // Converts raw non-linear depth to linear eye depth (world units).
+            // This ensures depth comparisons are consistent regardless of camera distance.
+            // _ZBufferParams is a Unity built-in: (z/far, far, z/far*near, far-near) with reversed Z.
+            float LinearizeDepth(float rawDepth)
+            {
+                return 1.0 / (_ZBufferParams.z * rawDepth + _ZBufferParams.w);
+            }
+
             // NOTE: Color matching is performed in the color space of _MainTex (typically gamma
             // in Unity's built-in pipeline). _SurfaceColors set via the inspector are also
             // gamma-encoded in that case, so matching is consistent. If you switch to a linear
@@ -174,35 +182,43 @@ Shader "Hidden/Roystan/Outline Post Process"
                 // ---------------------------------------------------------------
                 // PRIORITY SELECTION
                 //
-                // Raw depth: higher value = closer to camera (reversed Z).
-                // If depth spread exceeds _DepthContactThreshold = silhouette.
-                // Silhouette: nearest sample (highest raw depth) wins outright.
-                // Contact: lowest priority index across all samples wins.
+                // Linearized depth: smaller value = nearer to camera (eye space).
+                // Raw depth is non-linear — two surfaces the same world-space distance
+                // apart will have a much smaller raw depth difference when far from the
+                // camera than when close. Linearizing makes _DepthContactThreshold a
+                // consistent world-space quantity regardless of camera distance.
+                //
+                // If linear depth spread exceeds _DepthContactThreshold = silhouette.
+                // Silhouette: nearest sample (smallest linear depth) wins outright.
+                // Contact:    lowest priority index across all samples wins.
                 // ---------------------------------------------------------------
 
-                float minDepth = centerDepth;
-                float maxDepth = centerDepth;
+                float linearCenterDepth = LinearizeDepth(centerDepth);
+                float linearMinDepth = linearCenterDepth;
+                float linearMaxDepth = linearCenterDepth;
+                float linearRingDepth[8];
                 for (int md = 0; md < 8; md++)
                 {
-                    minDepth = min(minDepth, ringDepth[md]);
-                    maxDepth = max(maxDepth, ringDepth[md]);
+                    linearRingDepth[md] = LinearizeDepth(ringDepth[md]);
+                    linearMinDepth = min(linearMinDepth, linearRingDepth[md]);
+                    linearMaxDepth = max(linearMaxDepth, linearRingDepth[md]);
                 }
-                bool isSilhouette = (maxDepth - minDepth) > _DepthContactThreshold;
+                bool isSilhouette = (linearMaxDepth - linearMinDepth) > _DepthContactThreshold;
 
                 int winnerIndex = -1;
 
                 if (isSilhouette)
                 {
-                    // Highest raw depth value = nearest to camera.
+                    // Smallest linear depth = nearest to camera.
                     // Start with the center as the initial nearest candidate.
-                    float nearestDepth = centerDepth;
+                    float nearestLinearDepth = linearCenterDepth;
                     winnerIndex = centerPriority;
                     for (int si = 0; si < 8; si++)
                     {
-                        if (ringDepth[si] > nearestDepth)
+                        if (linearRingDepth[si] < nearestLinearDepth)
                         {
-                            nearestDepth = ringDepth[si];
-                            winnerIndex  = ringPriority[si];
+                            nearestLinearDepth = linearRingDepth[si];
+                            winnerIndex        = ringPriority[si];
                         }
                     }
                 }
