@@ -96,7 +96,7 @@ Shader "Hidden/Roystan/Outline Post Process"
             {
                 // 8 evenly spaced directions around a circle (every 45 degrees).
                 // Diagonal offsets are scaled by 1/sqrt(2) so all samples sit on
-                // a true circle of radius _Scale pixels rather than a square.
+                // a true circle rather than a square.
                 static const float DIAG = 0.70710678;
                 static const float2 RING_DIRS[8] =
                 {
@@ -110,14 +110,22 @@ Shader "Hidden/Roystan/Outline Post Process"
                     float2( DIAG, -DIAG ),  // SE
                 };
 
-                float2 texelRadius = _MainTex_TexelSize.xy * _Scale;
+                // Sample center depth first so we can linearize it before sampling the ring.
+                float centerDepth = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, sampler_CameraDepthTexture, i.texcoord).r;
+                float linearCenterDepth = LinearizeDepth(centerDepth);
 
-                // Sample the true center pixel for depth, normal, and color.
-                float  centerDepth  = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, sampler_CameraDepthTexture, i.texcoord).r;
+                // Scale the ring radius inversely with linear depth so the ring always covers
+                // the same world-space footprint regardless of camera distance. Without this,
+                // the ring spans more world-space area for distant objects, causing normal and
+                // color edge tests to compare surfaces that are farther apart and fire
+                // inconsistently. _Scale is in units of (pixels * world-units); multiply your
+                // old pixel value by your typical object distance to get the equivalent value.
+                float2 texelRadius = _MainTex_TexelSize.xy * _Scale / linearCenterDepth;
+
+                // Sample remaining center data and all 8 ring positions.
                 float3 centerNormal = SAMPLE_TEXTURE2D(_CameraNormalsTexture, sampler_CameraNormalsTexture, i.texcoord).rgb;
                 float4 centerColor  = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.texcoord);
 
-                // Sample the 8 ring positions.
                 float  ringDepth [8];
                 float3 ringNormal[8];
                 float4 ringColor [8];
@@ -130,10 +138,7 @@ Shader "Hidden/Roystan/Outline Post Process"
                     ringColor [s] = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, uv);
                 }
 
-                // Linearize all depths once here — used for both edge detection and priority
-                // selection below. Eye-space depth is in world units so thresholds are
-                // consistent regardless of how far the object is from the camera.
-                float linearCenterDepth = LinearizeDepth(centerDepth);
+                // Linearize ring depths; track min/max for priority selection below.
                 float linearRingDepth[8];
                 float linearMinDepth = linearCenterDepth;
                 float linearMaxDepth = linearCenterDepth;
