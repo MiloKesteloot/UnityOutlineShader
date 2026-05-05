@@ -24,6 +24,11 @@ Shader "Hidden/Roystan/Outline Post Process"
             float _NormalThreshold;
             float _ColorTolerance;
             float _DepthContactThreshold;
+            // World-space depth added to the denominator before normalising.
+            // 0 = pure relative (current behaviour). Larger values blend toward
+            // absolute, stabilising edge detection for close-up geometry without
+            // losing smooth-surface suppression at distance.
+            float _DepthBlend;
 
             float4x4 _ClipToView;
 
@@ -199,12 +204,12 @@ Shader "Hidden/Roystan/Outline Post Process"
                         float2 uv = i.texcoord + RING_DIRS[d] * texelRadius * t;
                         float stepRaw    = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, sampler_CameraDepthTexture, uv).r;
                         float stepLinear = LinearizeDepth(stepRaw);
-                        if (abs(stepLinear - prevLinear) / max(prevLinear, 1e-5) > _DepthThreshold * normalThreshold)
+                        if (abs(stepLinear - prevLinear) / (prevLinear + _DepthBlend) > _DepthThreshold * normalThreshold)
                             edgeDepth = 1;
                         prevLinear = stepLinear;
                     }
                     float ringLinear = linearRingDepth[d];
-                    if (abs(ringLinear - prevLinear) / max(prevLinear, 1e-5) > _DepthThreshold * normalThreshold)
+                    if (abs(ringLinear - prevLinear) / (prevLinear + _DepthBlend) > _DepthThreshold * normalThreshold)
                         edgeDepth = 1;
                 }
 
@@ -248,7 +253,7 @@ Shader "Hidden/Roystan/Outline Post Process"
                 // Contact:    lowest priority index across all samples wins.
                 // ---------------------------------------------------------------
 
-                bool isSilhouette = (linearMaxDepth - linearMinDepth) / max(linearCenterDepth, 1e-5) > _DepthContactThreshold;
+                bool isSilhouette = (linearMaxDepth - linearMinDepth) / (linearCenterDepth + _DepthBlend) > _DepthContactThreshold;
 
                 int winnerIndex = -1;
 

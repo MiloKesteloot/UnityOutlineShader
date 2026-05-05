@@ -39,6 +39,9 @@ public sealed class PostProcessOutline : PostProcessEffectSettings
     [Tooltip("Depth difference required to draw an edge.")]
     public FloatParameter depthThreshold = new FloatParameter { value = 1.5f };
 
+    [Tooltip("World-space depth offset added to the normalisation denominator. 0 = pure relative (far-stable, close-variable). Higher values blend toward absolute sensitivity, stabilising outlines on close-up geometry.")]
+    public FloatParameter depthBlend = new() { value = 0f };
+
     [Range(0, 1), Tooltip("Normal/view angle threshold that affects depth sensitivity on slopes.")]
     public FloatParameter depthNormalThreshold = new FloatParameter { value = 0.5f };
 
@@ -64,6 +67,7 @@ public sealed class PostProcessOutlineRenderer : PostProcessEffectRenderer<PostP
 
         sheet.properties.SetFloat("_Scale",                     settings.scale);
         sheet.properties.SetFloat("_DepthThreshold",            settings.depthThreshold);
+        sheet.properties.SetFloat("_DepthBlend",                settings.depthBlend);
         sheet.properties.SetFloat("_DepthNormalThreshold",      settings.depthNormalThreshold);
         sheet.properties.SetFloat("_DepthNormalThresholdScale", settings.depthNormalThresholdScale);
         sheet.properties.SetFloat("_NormalThreshold",           settings.normalThreshold);
