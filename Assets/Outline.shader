@@ -94,20 +94,43 @@ Shader "Hidden/Roystan/Outline Post Process"
 
             float4 Frag(Varyings i) : SV_Target
             {
-                // 8 evenly spaced directions around a circle (every 45 degrees).
-                // Diagonal offsets are scaled by 1/sqrt(2) so all samples sit on
-                // a true circle rather than a square.
-                static const float DIAG = 0.70710678;
-                static const float2 RING_DIRS[8] =
+                // 32 evenly spaced directions around a circle (every 11.25 degrees).
+                // All vectors are unit length (computed from cos/sin), so no scaling needed.
+                static const int NUM_DIRS = 32;
+                static const float2 RING_DIRS[32] =
                 {
-                    float2( 1,     0    ),  // E
-                    float2( DIAG,  DIAG ),  // NE
-                    float2( 0,     1    ),  // N
-                    float2(-DIAG,  DIAG ),  // NW
-                    float2(-1,     0    ),  // W
-                    float2(-DIAG, -DIAG ),  // SW
-                    float2( 0,    -1    ),  // S
-                    float2( DIAG, -DIAG ),  // SE
+                    float2( 1.0000,  0.0000),  //   0°
+                    float2( 0.9808,  0.1951),  //  11.25°
+                    float2( 0.9239,  0.3827),  //  22.5°
+                    float2( 0.8315,  0.5556),  //  33.75°
+                    float2( 0.7071,  0.7071),  //  45°
+                    float2( 0.5556,  0.8315),  //  56.25°
+                    float2( 0.3827,  0.9239),  //  67.5°
+                    float2( 0.1951,  0.9808),  //  78.75°
+                    float2( 0.0000,  1.0000),  //  90°
+                    float2(-0.1951,  0.9808),  // 101.25°
+                    float2(-0.3827,  0.9239),  // 112.5°
+                    float2(-0.5556,  0.8315),  // 123.75°
+                    float2(-0.7071,  0.7071),  // 135°
+                    float2(-0.8315,  0.5556),  // 146.25°
+                    float2(-0.9239,  0.3827),  // 157.5°
+                    float2(-0.9808,  0.1951),  // 168.75°
+                    float2(-1.0000,  0.0000),  // 180°
+                    float2(-0.9808, -0.1951),  // 191.25°
+                    float2(-0.9239, -0.3827),  // 202.5°
+                    float2(-0.8315, -0.5556),  // 213.75°
+                    float2(-0.7071, -0.7071),  // 225°
+                    float2(-0.5556, -0.8315),  // 236.25°
+                    float2(-0.3827, -0.9239),  // 247.5°
+                    float2(-0.1951, -0.9808),  // 258.75°
+                    float2( 0.0000, -1.0000),  // 270°
+                    float2( 0.1951, -0.9808),  // 281.25°
+                    float2( 0.3827, -0.9239),  // 292.5°
+                    float2( 0.5556, -0.8315),  // 303.75°
+                    float2( 0.7071, -0.7071),  // 315°
+                    float2( 0.8315, -0.5556),  // 326.25°
+                    float2( 0.9239, -0.3827),  // 337.5°
+                    float2( 0.9808, -0.1951),  // 348.75°
                 };
 
                 // Sample center depth first so we can linearize it before sampling the ring.
@@ -124,11 +147,11 @@ Shader "Hidden/Roystan/Outline Post Process"
                 float3 centerNormal = SAMPLE_TEXTURE2D(_CameraNormalsTexture, sampler_CameraNormalsTexture, i.texcoord).rgb;
                 float4 centerColor  = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.texcoord);
 
-                float  ringDepth [8];
-                float3 ringNormal[8];
-                float4 ringColor [8];
+                float  ringDepth [32];
+                float3 ringNormal[32];
+                float4 ringColor [32];
 
-                for (int s = 0; s < 8; s++)
+                for (int s = 0; s < NUM_DIRS; s++)
                 {
                     float2 uv = i.texcoord + RING_DIRS[s] * texelRadius;
                     ringDepth [s] = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, sampler_CameraDepthTexture, uv).r;
@@ -137,10 +160,10 @@ Shader "Hidden/Roystan/Outline Post Process"
                 }
 
                 // Linearize ring depths; track min/max for priority selection below.
-                float linearRingDepth[8];
+                float linearRingDepth[32];
                 float linearMinDepth = linearCenterDepth;
                 float linearMaxDepth = linearCenterDepth;
-                for (int ld = 0; ld < 8; ld++)
+                for (int ld = 0; ld < NUM_DIRS; ld++)
                 {
                     linearRingDepth[ld] = LinearizeDepth(ringDepth[ld]);
                     linearMinDepth = min(linearMinDepth, linearRingDepth[ld]);
@@ -166,7 +189,7 @@ Shader "Hidden/Roystan/Outline Post Process"
                 static const int DEPTH_STEPS = 5;
                 float edgeDepth = 0;
                 [unroll]
-                for (int d = 0; d < 8; d++)
+                for (int d = 0; d < NUM_DIRS; d++)
                 {
                     float prevLinear = linearCenterDepth;
                     [unroll]
@@ -190,7 +213,7 @@ Shader "Hidden/Roystan/Outline Post Process"
                 // in subtraction so this is equivalent to comparing in [-1,1] space.
                 // Compare each ring sample against the true center and take the max difference.
                 float maxNormalDiff = 0;
-                for (int n = 0; n < 8; n++)
+                for (int n = 0; n < NUM_DIRS; n++)
                 {
                     float3 diff = ringNormal[n] - centerNormal;
                     maxNormalDiff = max(maxNormalDiff, dot(diff, diff));
@@ -201,12 +224,12 @@ Shader "Hidden/Roystan/Outline Post Process"
                 // Fires when any ring sample matches a different registered color than the center.
                 // This catches edges like red vs blue that have similar luminance.
                 int centerPriority = GetColorPriority(centerColor.rgb);
-                int ringPriority[8];
-                for (int c = 0; c < 8; c++)
+                int ringPriority[32];
+                for (int c = 0; c < NUM_DIRS; c++)
                     ringPriority[c] = GetColorPriority(ringColor[c].rgb);
 
                 float edgeColor = 0;
-                for (int e = 0; e < 8; e++)
+                for (int e = 0; e < NUM_DIRS; e++)
                 {
                     if (ringPriority[e] != centerPriority)
                     {
@@ -237,7 +260,7 @@ Shader "Hidden/Roystan/Outline Post Process"
                     // outline colour into adjacent surfaces at corners.
                     float nearestLinearDepth = linearCenterDepth;
                     winnerIndex = centerPriority;
-                    for (int si = 0; si < 8; si++)
+                    for (int si = 0; si < NUM_DIRS; si++)
                     {
                         float relCloser = (linearCenterDepth - linearRingDepth[si]) / max(linearCenterDepth, 1e-5);
                         if (relCloser > _DepthContactThreshold && ringPriority[si] >= 0 && linearRingDepth[si] < nearestLinearDepth)
@@ -252,7 +275,7 @@ Shader "Hidden/Roystan/Outline Post Process"
                     // Contact edge — lowest priority index wins for a uniform outline colour
                     // along the boundary.
                     if (centerPriority >= 0) winnerIndex = centerPriority;
-                    for (int ci = 0; ci < 8; ci++)
+                    for (int ci = 0; ci < NUM_DIRS; ci++)
                     {
                         if (ringPriority[ci] >= 0 && (winnerIndex < 0 || ringPriority[ci] < winnerIndex))
                             winnerIndex = ringPriority[ci];
