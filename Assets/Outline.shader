@@ -157,31 +157,31 @@ Shader "Hidden/Roystan/Outline Post Process"
                 float normalThreshold01 = saturate((NdotV - _DepthNormalThreshold) / depthNormalDenom);
                 float normalThreshold   = normalThreshold01 * _DepthNormalThresholdScale + 1;
 
-                // Walk outward in small steps per direction and check each step-to-step NDC
-                // depth difference. A smooth planar ramp (e.g. a perpendicular face) spreads
-                // evenly across all steps — each step stays below the threshold. A real geometric
-                // edge concentrates the full depth jump into one step and exceeds it.
-                // Raw NDC depth is used because its per-pixel gradient for any flat surface is
-                // constant regardless of camera distance (d(z_ndc)/d(pixel) = near/(x*f)),
-                // so the threshold needs no distance correction.
-                // The final step reuses the already-sampled ring depth to avoid a redundant fetch.
+                // Walk outward in small steps per direction and check each step-to-step
+                // relative linear depth difference. Using a ratio (delta / prev) makes the
+                // threshold distance-independent: a smooth surface produces the same relative
+                // gradient at any depth, while a true geometric edge produces a spike regardless
+                // of how far away it is. The final step reuses the already-linearized ring
+                // depth to avoid a redundant fetch.
                 static const int DEPTH_STEPS = 5;
                 float edgeDepth = 0;
                 [unroll]
                 for (int d = 0; d < 8; d++)
                 {
-                    float prevDepth = centerDepth;
+                    float prevLinear = linearCenterDepth;
                     [unroll]
                     for (int step = 1; step < DEPTH_STEPS; step++)
                     {
                         float t = (float)step / (float)DEPTH_STEPS;
                         float2 uv = i.texcoord + RING_DIRS[d] * texelRadius * t;
-                        float stepDepth = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, sampler_CameraDepthTexture, uv).r;
-                        if (abs(stepDepth - prevDepth) > _DepthThreshold * normalThreshold)
+                        float stepRaw    = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, sampler_CameraDepthTexture, uv).r;
+                        float stepLinear = LinearizeDepth(stepRaw);
+                        if (abs(stepLinear - prevLinear) / max(prevLinear, 1e-5) > _DepthThreshold * normalThreshold)
                             edgeDepth = 1;
-                        prevDepth = stepDepth;
+                        prevLinear = stepLinear;
                     }
-                    if (abs(ringDepth[d] - prevDepth) > _DepthThreshold * normalThreshold)
+                    float ringLinear = linearRingDepth[d];
+                    if (abs(ringLinear - prevLinear) / max(prevLinear, 1e-5) > _DepthThreshold * normalThreshold)
                         edgeDepth = 1;
                 }
 
@@ -225,19 +225,22 @@ Shader "Hidden/Roystan/Outline Post Process"
                 // Contact:    lowest priority index across all samples wins.
                 // ---------------------------------------------------------------
 
-                bool isSilhouette = (linearMaxDepth - linearMinDepth) > _DepthContactThreshold;
+                bool isSilhouette = (linearMaxDepth - linearMinDepth) / max(linearCenterDepth, 1e-5) > _DepthContactThreshold;
 
                 int winnerIndex = -1;
 
                 if (isSilhouette)
                 {
-                    // Smallest linear depth = nearest to camera.
-                    // Start with the center as the initial nearest candidate.
+                    // Nearest-to-camera wins, but only if it is meaningfully closer than
+                    // the center. Same-depth neighbours that happen to share a ring with a
+                    // distant background must not steal the win — doing so bleeds their
+                    // outline colour into adjacent surfaces at corners.
                     float nearestLinearDepth = linearCenterDepth;
                     winnerIndex = centerPriority;
                     for (int si = 0; si < 8; si++)
                     {
-                        if (linearRingDepth[si] < nearestLinearDepth && ringPriority[si] >= 0)
+                        float relCloser = (linearCenterDepth - linearRingDepth[si]) / max(linearCenterDepth, 1e-5);
+                        if (relCloser > _DepthContactThreshold && ringPriority[si] >= 0 && linearRingDepth[si] < nearestLinearDepth)
                         {
                             nearestLinearDepth = linearRingDepth[si];
                             winnerIndex        = ringPriority[si];
@@ -246,7 +249,8 @@ Shader "Hidden/Roystan/Outline Post Process"
                 }
                 else
                 {
-                    // Contact edge — lowest priority index wins.
+                    // Contact edge — lowest priority index wins for a uniform outline colour
+                    // along the boundary.
                     if (centerPriority >= 0) winnerIndex = centerPriority;
                     for (int ci = 0; ci < 8; ci++)
                     {
