@@ -32,38 +32,40 @@ Shader "Hidden/Roystan/Outline Post Process"
 
             float4x4 _ClipToView;
 
-            int _ColorCount;
-            float4 _SurfaceColors[32];
-            float4 _OutlineColors[32];
+            int _AliasCount;
+            float4 _AliasColors[64]; // rgb = color to match against
+            float4 _AliasIds[64];    // x = groupId, y = objectId (baked by C#)
+
+            int _ObjectCount;
+            float4 _ObjectMainColor[16];    // replacement color shown in final render
+            float4 _ObjectOutlineColor[16]; // outline color drawn at edges
 
             // Converts raw non-linear depth to linear eye depth (world units).
-            // This ensures depth comparisons are consistent regardless of camera distance.
-            // _ZBufferParams is a Unity built-in: (z/far, far, z/far*near, far-near) with reversed Z.
             float LinearizeDepth(float rawDepth)
             {
                 return 1.0 / (_ZBufferParams.z * rawDepth + _ZBufferParams.w);
             }
 
-            // NOTE: Color matching is performed in the color space of _MainTex (typically gamma
-            // in Unity's built-in pipeline). _SurfaceColors set via the inspector are also
-            // gamma-encoded in that case, so matching is consistent. If you switch to a linear
-            // color space pipeline, verify that both sides agree on encoding.
-            int GetColorPriority(float3 pixel)
+            // Returns the groupId and objectId for the closest alias match within
+            // _ColorTolerance, or -1/-1 when no alias matches.
+            // groupId encodes (objectIndex * 2 + subGroup) so same-group pixels compare equal
+            // and cross-group (or cross-object) pixels compare unequal — driving edge detection.
+            void GetAliasInfo(float3 pixel, out int groupId, out int objectId)
             {
-                int bestIndex = -1;
+                groupId  = -1;
+                objectId = -1;
                 float bestDist = _ColorTolerance;
-                // Clamped to 32 to guard against misconfigured _ColorCount exceeding the array size.
-                int count = min(_ColorCount, 32);
+                int count = min(_AliasCount, 64);
                 for (int i = 0; i < count; i++)
                 {
-                    float dist = length(pixel - _SurfaceColors[i].rgb);
+                    float dist = length(pixel - _AliasColors[i].rgb);
                     if (dist < bestDist)
                     {
                         bestDist = dist;
-                        bestIndex = i;
+                        groupId  = (int)round(_AliasIds[i].x);
+                        objectId = (int)round(_AliasIds[i].y);
                     }
                 }
-                return bestIndex;
             }
 
             float4 alphaBlend(float4 top, float4 bottom)
@@ -100,42 +102,41 @@ Shader "Hidden/Roystan/Outline Post Process"
             float4 Frag(Varyings i) : SV_Target
             {
                 // 32 evenly spaced directions around a circle (every 11.25 degrees).
-                // All vectors are unit length (computed from cos/sin), so no scaling needed.
                 static const int NUM_DIRS = 32;
                 static const float2 RING_DIRS[32] =
                 {
-                    float2( 1.0000,  0.0000),  //   0°
-                    float2( 0.9808,  0.1951),  //  11.25°
-                    float2( 0.9239,  0.3827),  //  22.5°
-                    float2( 0.8315,  0.5556),  //  33.75°
-                    float2( 0.7071,  0.7071),  //  45°
-                    float2( 0.5556,  0.8315),  //  56.25°
-                    float2( 0.3827,  0.9239),  //  67.5°
-                    float2( 0.1951,  0.9808),  //  78.75°
-                    float2( 0.0000,  1.0000),  //  90°
-                    float2(-0.1951,  0.9808),  // 101.25°
-                    float2(-0.3827,  0.9239),  // 112.5°
-                    float2(-0.5556,  0.8315),  // 123.75°
-                    float2(-0.7071,  0.7071),  // 135°
-                    float2(-0.8315,  0.5556),  // 146.25°
-                    float2(-0.9239,  0.3827),  // 157.5°
-                    float2(-0.9808,  0.1951),  // 168.75°
-                    float2(-1.0000,  0.0000),  // 180°
-                    float2(-0.9808, -0.1951),  // 191.25°
-                    float2(-0.9239, -0.3827),  // 202.5°
-                    float2(-0.8315, -0.5556),  // 213.75°
-                    float2(-0.7071, -0.7071),  // 225°
-                    float2(-0.5556, -0.8315),  // 236.25°
-                    float2(-0.3827, -0.9239),  // 247.5°
-                    float2(-0.1951, -0.9808),  // 258.75°
-                    float2( 0.0000, -1.0000),  // 270°
-                    float2( 0.1951, -0.9808),  // 281.25°
-                    float2( 0.3827, -0.9239),  // 292.5°
-                    float2( 0.5556, -0.8315),  // 303.75°
-                    float2( 0.7071, -0.7071),  // 315°
-                    float2( 0.8315, -0.5556),  // 326.25°
-                    float2( 0.9239, -0.3827),  // 337.5°
-                    float2( 0.9808, -0.1951),  // 348.75°
+                    float2( 1.0000,  0.0000),
+                    float2( 0.9808,  0.1951),
+                    float2( 0.9239,  0.3827),
+                    float2( 0.8315,  0.5556),
+                    float2( 0.7071,  0.7071),
+                    float2( 0.5556,  0.8315),
+                    float2( 0.3827,  0.9239),
+                    float2( 0.1951,  0.9808),
+                    float2( 0.0000,  1.0000),
+                    float2(-0.1951,  0.9808),
+                    float2(-0.3827,  0.9239),
+                    float2(-0.5556,  0.8315),
+                    float2(-0.7071,  0.7071),
+                    float2(-0.8315,  0.5556),
+                    float2(-0.9239,  0.3827),
+                    float2(-0.9808,  0.1951),
+                    float2(-1.0000,  0.0000),
+                    float2(-0.9808, -0.1951),
+                    float2(-0.9239, -0.3827),
+                    float2(-0.8315, -0.5556),
+                    float2(-0.7071, -0.7071),
+                    float2(-0.5556, -0.8315),
+                    float2(-0.3827, -0.9239),
+                    float2(-0.1951, -0.9808),
+                    float2( 0.0000, -1.0000),
+                    float2( 0.1951, -0.9808),
+                    float2( 0.3827, -0.9239),
+                    float2( 0.5556, -0.8315),
+                    float2( 0.7071, -0.7071),
+                    float2( 0.8315, -0.5556),
+                    float2( 0.9239, -0.3827),
+                    float2( 0.9808, -0.1951),
                 };
 
                 // Sample center depth first so we can linearize it before sampling the ring.
@@ -143,13 +144,10 @@ Shader "Hidden/Roystan/Outline Post Process"
                 float linearCenterDepth = LinearizeDepth(centerDepth);
 
                 // Scale the ring radius proportionally with screen height so outline thickness
-                // stays visually constant when the window is resized. _Scale is in "pixels at
-                // 1080p": at 2160p the pixel count doubles, but objects are also twice as large
-                // in pixels, so the visual proportion is unchanged.
+                // stays visually constant when the window is resized.
                 float pixelRadius = _Scale * (_ScreenParams.y / 1080.0);
                 float2 texelRadius = _MainTex_TexelSize.xy * pixelRadius;
 
-                // Sample remaining center data and all 8 ring positions.
                 float3 centerNormal = SAMPLE_TEXTURE2D(_CameraNormalsTexture, sampler_CameraNormalsTexture, i.texcoord).rgb;
                 float4 centerColor  = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.texcoord);
 
@@ -177,26 +175,17 @@ Shader "Hidden/Roystan/Outline Post Process"
                 }
 
                 // --- Depth edge ---
-                // Build the adaptive threshold from the center normal and view direction.
-                // viewSpaceDir is interpolated across the triangle so it must be normalized.
                 float3 viewNormal = centerNormal * 2 - 1;
                 float NdotV = 1 - dot(viewNormal, -normalize(i.viewSpaceDir));
-                // Guard against divide-by-zero when _DepthNormalThreshold is exactly 1.
                 float depthNormalDenom = max(1 - _DepthNormalThreshold, 1e-5);
                 float normalThreshold01 = saturate((NdotV - _DepthNormalThreshold) / depthNormalDenom);
                 float normalThreshold   = normalThreshold01 * _DepthNormalThresholdScale + 1;
 
                 // Walk outward in small steps per direction and check each step-to-step
                 // relative linear depth difference. Using a ratio (delta / prev) makes the
-                // threshold distance-independent: a smooth surface produces the same relative
-                // gradient at any depth, while a true geometric edge produces a spike regardless
-                // of how far away it is. The final step reuses the already-linearized ring
-                // depth to avoid a redundant fetch.
+                // threshold distance-independent.
                 static const int DEPTH_STEPS = 5;
                 float edgeDepth = 0;
-                // Also track depth extremes across all step samples so the silhouette check
-                // below sees any foreground geometry the step loop detected even if the ring
-                // samples (at full radius) overshot it back onto the background.
                 float stepMinLinear = linearCenterDepth;
                 float stepMaxLinear = linearCenterDepth;
                 [unroll]
@@ -225,9 +214,6 @@ Shader "Hidden/Roystan/Outline Post Process"
                 float allMaxDepth = max(linearMaxDepth, stepMaxLinear);
 
                 // --- Normal edge ---
-                // Normal differences are computed in [0,1] space; the *2-1 decode cancels out
-                // in subtraction so this is equivalent to comparing in [-1,1] space.
-                // Compare each ring sample against the true center and take the max difference.
                 float maxNormalDiff = 0;
                 for (int n = 0; n < NUM_DIRS; n++)
                 {
@@ -236,22 +222,22 @@ Shader "Hidden/Roystan/Outline Post Process"
                 }
                 float edgeNormal = sqrt(maxNormalDiff) > _NormalThreshold ? 1 : 0;
 
-                // --- Color edge ---
-                // Fires when any ring sample matches a different registered color than the center.
-                // This catches edges like red vs blue that have similar luminance.
-                int centerPriority = GetColorPriority(centerColor.rgb);
-                int ringPriority[32];
-                for (int c = 0; c < NUM_DIRS; c++)
-                    ringPriority[c] = GetColorPriority(ringColor[c].rgb);
+                // --- Alias lookup ---
+                int centerGroupId, centerObjectId;
+                GetAliasInfo(centerColor.rgb, centerGroupId, centerObjectId);
 
-                // Require both samples to be registered colours. A ring sample that returns
-                // -1 (blended/anti-aliased boundary pixel, or unregistered geometry) is not
-                // a known colour and must not trigger a colour edge — doing so creates false
-                // edges on background pixels whose ring clips an AA-blended silhouette pixel.
+                int ringGroupId [32];
+                int ringObjectId[32];
+                for (int c = 0; c < NUM_DIRS; c++)
+                    GetAliasInfo(ringColor[c].rgb, ringGroupId[c], ringObjectId[c]);
+
+                // --- Color edge ---
+                // Fires when center and ring belong to different alias groups (different groupIds).
+                // Requires both to be registered; unregistered pixels (groupId == -1) never trigger.
                 float edgeColor = 0;
                 for (int e = 0; e < NUM_DIRS; e++)
                 {
-                    if (centerPriority >= 0 && ringPriority[e] >= 0 && ringPriority[e] != centerPriority)
+                    if (centerGroupId >= 0 && ringGroupId[e] >= 0 && ringGroupId[e] != centerGroupId)
                     {
                         edgeColor = 1;
                         break;
@@ -265,65 +251,60 @@ Shader "Hidden/Roystan/Outline Post Process"
                 //
                 // If linear depth spread exceeds _DepthContactThreshold = silhouette.
                 // Silhouette: nearest sample (smallest linear depth) wins outright.
-                // Contact:    lowest priority index across all samples wins.
+                // Contact:    lowest objectId across all samples wins.
                 // ---------------------------------------------------------------
-
-                // Using max/min ratio rather than (max-min)/center makes this check
-                // truly scale-invariant: two surfaces at the same relative depth separation
-                // produce the same ratio regardless of absolute camera distance.
                 bool isSilhouette = (allMaxDepth / max(allMinDepth, 1e-5)) > (1.0 + _DepthContactThreshold);
 
-                int winnerIndex = -1;
+                int winnerObjectId = -1;
 
                 if (isSilhouette)
                 {
                     // Nearest-to-camera wins, but only if it is meaningfully closer than
-                    // the center. Same-depth neighbours that happen to share a ring with a
-                    // distant background must not steal the win — doing so bleeds their
-                    // outline colour into adjacent surfaces at corners.
+                    // the center. Same-depth neighbours must not steal the win.
                     float nearestLinearDepth = linearCenterDepth;
-                    winnerIndex = centerPriority;
+                    winnerObjectId = centerObjectId;
                     bool foundValidNearSample = false;
                     for (int si = 0; si < NUM_DIRS; si++)
                     {
-                        // Scale-invariant: is this sample more than _DepthContactThreshold
-                        // times closer (i.e. at a fraction of center's depth)?
                         bool meaningfullyCloser = (linearCenterDepth / max(linearRingDepth[si], 1e-5)) > (1.0 + _DepthContactThreshold);
-                        if (meaningfullyCloser && ringPriority[si] >= 0 && linearRingDepth[si] < nearestLinearDepth)
+                        if (meaningfullyCloser && ringObjectId[si] >= 0 && linearRingDepth[si] < nearestLinearDepth)
                         {
                             nearestLinearDepth = linearRingDepth[si];
-                            winnerIndex        = ringPriority[si];
+                            winnerObjectId     = ringObjectId[si];
                             foundValidNearSample = true;
                         }
                     }
-                    // If no registered near sample won, use the combined depth range (ring +
-                    // steps) to check whether any surface is significantly closer than us.
-                    // If so, we are the background looking at a foreground that just didn't
-                    // match a registered colour — suppress to avoid drawing the background's
-                    // own outline colour at foreground silhouettes.
+                    // If no registered near sample won, check whether any surface (including
+                    // step samples) is closer than us. If so, suppress — we are background
+                    // looking at unregistered foreground geometry.
                     if (!foundValidNearSample)
                     {
                         if ((linearCenterDepth / max(allMinDepth, 1e-5)) > (1.0 + _DepthContactThreshold))
-                            winnerIndex = -1;
+                            winnerObjectId = -1;
                     }
                 }
                 else
                 {
-                    // Contact edge — lowest priority index wins for a uniform outline colour
+                    // Contact edge — lowest objectId wins for a uniform outline colour
                     // along the boundary.
-                    if (centerPriority >= 0) winnerIndex = centerPriority;
+                    if (centerObjectId >= 0) winnerObjectId = centerObjectId;
                     for (int ci = 0; ci < NUM_DIRS; ci++)
                     {
-                        if (ringPriority[ci] >= 0 && (winnerIndex < 0 || ringPriority[ci] < winnerIndex))
-                            winnerIndex = ringPriority[ci];
+                        if (ringObjectId[ci] >= 0 && (winnerObjectId < 0 || ringObjectId[ci] < winnerObjectId))
+                            winnerObjectId = ringObjectId[ci];
                     }
                 }
 
-                if (winnerIndex < 0 || edge < 0.5)
-                    return centerColor;
+                // Replace registered alias pixels with their object's main color.
+                float4 displayColor = centerColor;
+                if (centerObjectId >= 0)
+                    displayColor = _ObjectMainColor[centerObjectId];
 
-                float4 outlineColor = _OutlineColors[winnerIndex];
-                return alphaBlend(outlineColor, centerColor);
+                if (winnerObjectId < 0 || edge < 0.5)
+                    return displayColor;
+
+                float4 outlineColor = _ObjectOutlineColor[winnerObjectId];
+                return alphaBlend(outlineColor, displayColor);
             }
             ENDHLSL
         }

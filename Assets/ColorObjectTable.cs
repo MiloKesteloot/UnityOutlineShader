@@ -1,0 +1,35 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+[CreateAssetMenu(menuName = "Roystan/Color Object Table", fileName = "ColorObjectTable")]
+public sealed class ColorObjectTable : ScriptableObject
+{
+    [Tooltip("Ordered list of color objects. Index 0 = highest priority.")]
+    public List<ColorObject> objects = new()
+    {
+        new()
+        {
+            mainColor    = Color.red,
+            outlineColor = new Color(0.5f, 0f, 0f),
+            groupA       = new List<Color> { Color.red },
+            groupB       = new()
+        }
+    };
+}
+
+[Serializable]
+public sealed class ColorObject
+{
+    [Tooltip("Color shown in the final render for every alias of this object.")]
+    public Color mainColor = Color.white;
+
+    [Tooltip("Outline color drawn at edges involving this object.")]
+    public Color outlineColor = Color.black;
+
+    [Tooltip("Group A aliases. No lines drawn between two group-A pixels of the same object.")]
+    public List<Color> groupA = new();
+
+    [Tooltip("Group B aliases. Lines ARE drawn between group-A and group-B pixels of the same object.")]
+    public List<Color> groupB = new();
+}

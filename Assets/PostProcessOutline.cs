@@ -1,30 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
+using System;
 using UnityEngine;
 using UnityEngine.Rendering.PostProcessing;
-
-// ---------------------------------------------------------------
-// ScriptableObject asset — create one via:
-//   Assets > Create > Roystan > Outline Color Table
-// ---------------------------------------------------------------
-[CreateAssetMenu(menuName = "Roystan/Outline Color Table", fileName = "OutlineColorTable")]
-public sealed class OutlineColorTable : ScriptableObject
-{
-    [Tooltip("Ordered list of surface/outline color pairs. Index 0 = highest priority. Maximum 16 entries.")]
-    public List<OutlineColorEntry> entries = new List<OutlineColorEntry>()
-    {
-        new OutlineColorEntry { surfaceColor = Color.red,   outlineColor = new Color(0.5f, 0f,   0f  ) },
-        new OutlineColorEntry { surfaceColor = Color.green, outlineColor = new Color(0f,   0.5f, 0f  ) },
-        new OutlineColorEntry { surfaceColor = Color.blue,  outlineColor = new Color(0f,   0f,   0.5f) },
-    };
-}
-
-[Serializable]
-public sealed class OutlineColorEntry
-{
-    public Color surfaceColor = Color.red;
-    public Color outlineColor = Color.black;
-}
 
 // ---------------------------------------------------------------
 // Post Process Settings
@@ -34,22 +10,22 @@ public sealed class OutlineColorEntry
 public sealed class PostProcessOutline : PostProcessEffectSettings
 {
     [Tooltip("Outline thickness in pixels at 1080p. Automatically scales at other resolutions to keep visual thickness constant.")]
-    public FloatParameter scale = new FloatParameter { value = 1f };
+    public FloatParameter scale = new() { value = 1f };
 
     [Tooltip("Depth difference required to draw an edge.")]
-    public FloatParameter depthThreshold = new FloatParameter { value = 1.5f };
+    public FloatParameter depthThreshold = new() { value = 1.5f };
 
     [Tooltip("World-space depth offset added to the normalisation denominator. 0 = pure relative (far-stable, close-variable). Higher values blend toward absolute sensitivity, stabilising outlines on close-up geometry.")]
     public FloatParameter depthBlend = new() { value = 0f };
 
     [Range(0, 1), Tooltip("Normal/view angle threshold that affects depth sensitivity on slopes.")]
-    public FloatParameter depthNormalThreshold = new FloatParameter { value = 0.5f };
+    public FloatParameter depthNormalThreshold = new() { value = 0.5f };
 
     [Tooltip("Scales how strongly depthNormalThreshold affects the depth threshold.")]
-    public FloatParameter depthNormalThresholdScale = new FloatParameter { value = 7 };
+    public FloatParameter depthNormalThresholdScale = new() { value = 7 };
 
     [Range(0, 1), Tooltip("Normal difference required to draw an edge.")]
-    public FloatParameter normalThreshold = new FloatParameter { value = 0.4f };
+    public FloatParameter normalThreshold = new() { value = 0.4f };
 }
 
 // ---------------------------------------------------------------
