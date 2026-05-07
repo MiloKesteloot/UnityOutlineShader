@@ -33,8 +33,8 @@ public sealed class OutlineColorEntry
 [PostProcess(typeof(PostProcessOutlineRenderer), PostProcessEvent.BeforeStack, "Roystan/Post Process Outline")]
 public sealed class PostProcessOutline : PostProcessEffectSettings
 {
-    [Tooltip("Number of pixels between samples tested for an edge.")]
-    public IntParameter scale = new IntParameter { value = 1 };
+    [Tooltip("Outline thickness in pixels at 1080p. Automatically scales at other resolutions to keep visual thickness constant.")]
+    public FloatParameter scale = new FloatParameter { value = 1f };
 
     [Tooltip("Depth difference required to draw an edge.")]
     public FloatParameter depthThreshold = new FloatParameter { value = 1.5f };

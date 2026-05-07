@@ -142,11 +142,12 @@ Shader "Hidden/Roystan/Outline Post Process"
                 float centerDepth = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, sampler_CameraDepthTexture, i.texcoord).r;
                 float linearCenterDepth = LinearizeDepth(centerDepth);
 
-                // Fixed pixel ring — keeps outline width constant in screen space regardless
-                // of camera distance. Edge detection thresholds are in linear world-space units
-                // (depth) or surface-space (normals/colors), so they remain consistent even
-                // though the ring covers more world-space area for distant objects.
-                float2 texelRadius = _MainTex_TexelSize.xy * _Scale;
+                // Scale the ring radius proportionally with screen height so outline thickness
+                // stays visually constant when the window is resized. _Scale is in "pixels at
+                // 1080p": at 2160p the pixel count doubles, but objects are also twice as large
+                // in pixels, so the visual proportion is unchanged.
+                float pixelRadius = _Scale * (_ScreenParams.y / 1080.0);
+                float2 texelRadius = _MainTex_TexelSize.xy * pixelRadius;
 
                 // Sample remaining center data and all 8 ring positions.
                 float3 centerNormal = SAMPLE_TEXTURE2D(_CameraNormalsTexture, sampler_CameraNormalsTexture, i.texcoord).rgb;
