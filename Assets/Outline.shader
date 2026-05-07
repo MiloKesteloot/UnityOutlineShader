@@ -244,10 +244,14 @@ Shader "Hidden/Roystan/Outline Post Process"
                 for (int c = 0; c < NUM_DIRS; c++)
                     ringPriority[c] = GetColorPriority(ringColor[c].rgb);
 
+                // Require both samples to be registered colours. A ring sample that returns
+                // -1 (blended/anti-aliased boundary pixel, or unregistered geometry) is not
+                // a known colour and must not trigger a colour edge — doing so creates false
+                // edges on background pixels whose ring clips an AA-blended silhouette pixel.
                 float edgeColor = 0;
                 for (int e = 0; e < NUM_DIRS; e++)
                 {
-                    if (ringPriority[e] != centerPriority)
+                    if (centerPriority >= 0 && ringPriority[e] >= 0 && ringPriority[e] != centerPriority)
                     {
                         edgeColor = 1;
                         break;
