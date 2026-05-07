@@ -193,6 +193,11 @@ Shader "Hidden/Roystan/Outline Post Process"
                 // depth to avoid a redundant fetch.
                 static const int DEPTH_STEPS = 5;
                 float edgeDepth = 0;
+                // Also track depth extremes across all step samples so the silhouette check
+                // below sees any foreground geometry the step loop detected even if the ring
+                // samples (at full radius) overshot it back onto the background.
+                float stepMinLinear = linearCenterDepth;
+                float stepMaxLinear = linearCenterDepth;
                 [unroll]
                 for (int d = 0; d < NUM_DIRS; d++)
                 {
@@ -206,12 +211,17 @@ Shader "Hidden/Roystan/Outline Post Process"
                         float stepLinear = LinearizeDepth(stepRaw);
                         if (abs(stepLinear - prevLinear) / (prevLinear + _DepthBlend) > _DepthThreshold * normalThreshold)
                             edgeDepth = 1;
+                        stepMinLinear = min(stepMinLinear, stepLinear);
+                        stepMaxLinear = max(stepMaxLinear, stepLinear);
                         prevLinear = stepLinear;
                     }
                     float ringLinear = linearRingDepth[d];
                     if (abs(ringLinear - prevLinear) / (prevLinear + _DepthBlend) > _DepthThreshold * normalThreshold)
                         edgeDepth = 1;
                 }
+                // Merge step-sample extremes into the ring extremes for a complete depth range.
+                float allMinDepth = min(linearMinDepth, stepMinLinear);
+                float allMaxDepth = max(linearMaxDepth, stepMaxLinear);
 
                 // --- Normal edge ---
                 // Normal differences are computed in [0,1] space; the *2-1 decode cancels out
@@ -253,7 +263,10 @@ Shader "Hidden/Roystan/Outline Post Process"
                 // Contact:    lowest priority index across all samples wins.
                 // ---------------------------------------------------------------
 
-                bool isSilhouette = (linearMaxDepth - linearMinDepth) / (linearCenterDepth + _DepthBlend) > _DepthContactThreshold;
+                // Using max/min ratio rather than (max-min)/center makes this check
+                // truly scale-invariant: two surfaces at the same relative depth separation
+                // produce the same ratio regardless of absolute camera distance.
+                bool isSilhouette = (allMaxDepth / max(allMinDepth, 1e-5)) > (1.0 + _DepthContactThreshold);
 
                 int winnerIndex = -1;
 
@@ -265,14 +278,28 @@ Shader "Hidden/Roystan/Outline Post Process"
                     // outline colour into adjacent surfaces at corners.
                     float nearestLinearDepth = linearCenterDepth;
                     winnerIndex = centerPriority;
+                    bool foundValidNearSample = false;
                     for (int si = 0; si < NUM_DIRS; si++)
                     {
-                        float relCloser = (linearCenterDepth - linearRingDepth[si]) / max(linearCenterDepth, 1e-5);
-                        if (relCloser > _DepthContactThreshold && ringPriority[si] >= 0 && linearRingDepth[si] < nearestLinearDepth)
+                        // Scale-invariant: is this sample more than _DepthContactThreshold
+                        // times closer (i.e. at a fraction of center's depth)?
+                        bool meaningfullyCloser = (linearCenterDepth / max(linearRingDepth[si], 1e-5)) > (1.0 + _DepthContactThreshold);
+                        if (meaningfullyCloser && ringPriority[si] >= 0 && linearRingDepth[si] < nearestLinearDepth)
                         {
                             nearestLinearDepth = linearRingDepth[si];
                             winnerIndex        = ringPriority[si];
+                            foundValidNearSample = true;
                         }
+                    }
+                    // If no registered near sample won, use the combined depth range (ring +
+                    // steps) to check whether any surface is significantly closer than us.
+                    // If so, we are the background looking at a foreground that just didn't
+                    // match a registered colour — suppress to avoid drawing the background's
+                    // own outline colour at foreground silhouettes.
+                    if (!foundValidNearSample)
+                    {
+                        if ((linearCenterDepth / max(allMinDepth, 1e-5)) > (1.0 + _DepthContactThreshold))
+                            winnerIndex = -1;
                     }
                 }
                 else

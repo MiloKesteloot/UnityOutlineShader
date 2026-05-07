@@ -1052,7 +1052,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   colorTable: {fileID: 11400000, guid: 16c568fe1c4a0aa439fc6c398bbc1ec4, type: 2}
   colorTolerance: 0.1
-  depthContactThreshold: 1.56
+  depthContactThreshold: 0.1
 --- !u!1 &1144636803
 GameObject:
   m_ObjectHideFlags: 0
