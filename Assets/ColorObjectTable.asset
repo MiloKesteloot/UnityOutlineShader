@@ -35,7 +35,9 @@ MonoBehaviour:
     - {r: 1, g: 0, b: 1, a: 0}
     groupC:
     - {r: 1, g: 1, b: 0, a: 0}
-    decorations: []
+    decorations:
+    - {r: 0.53333336, g: 0, b: 0, a: 0}
+    - {r: 0, g: 0.53333336, b: 0, a: 0}
   - label: Door Window
     mainColor: {r: 0.49803922, g: 0.45490196, b: 0.61960787, a: 1}
     outlineColor: {r: 1, g: 0, b: 0.9969902, a: 1}

@@ -302,10 +302,9 @@ Shader "Hidden/Roystan/Outline Post Process"
                     }
                 }
 
-                // Replace registered non-decoration pixels with their object's main color.
-                // Decoration pixels keep their raw color so each decoration shade stays visible.
+                // Replace registered alias pixels with their object's main color.
                 float4 displayColor = centerColor;
-                if (centerObjectId >= 0 && centerIsolated == 0)
+                if (centerObjectId >= 0)
                     displayColor = _ObjectMainColor[centerObjectId];
 
                 if (winnerObjectId < 0 || edge < 0.5)
