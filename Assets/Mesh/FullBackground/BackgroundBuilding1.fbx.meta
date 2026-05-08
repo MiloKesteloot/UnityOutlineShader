@@ -12,6 +12,16 @@ ModelImporter:
   - first:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule
+      name: Boards1
+    second: {fileID: 2100000, guid: a21889a042115a74faac0397495687b7, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Boards2
+    second: {fileID: 2100000, guid: dbc867ff774781b45803aaa4203fe6da, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
       name: DarkWood
     second: {fileID: 2100000, guid: b87d52312bf806944bfef79000dcabac, type: 2}
   - first:
@@ -24,6 +34,11 @@ ModelImporter:
       assembly: UnityEngine.CoreModule
       name: Floor
     second: {fileID: 2100000, guid: 1c63e8b1ebfafc847b0e681b02f0f605, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Floor2
+    second: {fileID: 2100000, guid: 5746ed08ba1332f43a6c527d1abd7e4e, type: 2}
   - first:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule

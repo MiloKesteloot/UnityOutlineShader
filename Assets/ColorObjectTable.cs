@@ -32,4 +32,7 @@ public sealed class ColorObject
 
     [Tooltip("Group B aliases. Lines ARE drawn between group-A and group-B pixels of the same object.")]
     public List<Color> groupB = new();
+
+    [Tooltip("Group C aliases. Lines are drawn between group-C and any other group of the same object.")]
+    public List<Color> groupC = new();
 }

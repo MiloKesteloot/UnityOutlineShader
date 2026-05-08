@@ -1050,7 +1050,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 640dcdc017341fb4183617a11521455f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  colorTable: {fileID: 11400000, guid: 16c568fe1c4a0aa439fc6c398bbc1ec4, type: 2}
+  colorObjectTable: {fileID: 11400000, guid: 26ae39db9f9b42d49aa1209f54ae3b55, type: 2}
   colorTolerance: 0.1
   depthContactThreshold: 0.1
 --- !u!1 &1144636803

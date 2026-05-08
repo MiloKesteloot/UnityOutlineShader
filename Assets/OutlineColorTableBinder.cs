@@ -75,9 +75,10 @@ public sealed class OutlineColorTableBinder : MonoBehaviour
                 _objectMainColor[objectCount]    = (Vector4)obj.mainColor;
                 _objectOutlineColor[objectCount] = (Vector4)obj.outlineColor;
 
-                // groupId is unique per (object × subgroup): object 0 → ids 0,1; object 1 → ids 2,3; etc.
-                int groupIdA = objectCount * 2;
-                int groupIdB = objectCount * 2 + 1;
+                // groupId is unique per (object × subgroup): object 0 → ids 0,1,2; object 1 → ids 3,4,5; etc.
+                int groupIdA = objectCount * 3;
+                int groupIdB = objectCount * 3 + 1;
+                int groupIdC = objectCount * 3 + 2;
 
                 // mainColor is always an implicit groupA alias.
                 if (aliasCount < MaxAliases)
@@ -103,6 +104,15 @@ public sealed class OutlineColorTableBinder : MonoBehaviour
                         if (aliasCount >= MaxAliases) break;
                         _aliasColors[aliasCount] = new Vector4(c.r, c.g, c.b, 0f);
                         _aliasIds[aliasCount]    = new Vector4(groupIdB, objectCount, 0f, 0f);
+                        aliasCount++;
+                    }
+
+                if (obj.groupC != null)
+                    foreach (var c in obj.groupC)
+                    {
+                        if (aliasCount >= MaxAliases) break;
+                        _aliasColors[aliasCount] = new Vector4(c.r, c.g, c.b, 0f);
+                        _aliasIds[aliasCount]    = new Vector4(groupIdC, objectCount, 0f, 0f);
                         aliasCount++;
                     }
 
