@@ -11,8 +11,12 @@ public sealed class OutlineColorTableBinder : MonoBehaviour
     [Range(0.0001f, 10.0f)]
     public float depthContactThreshold = 0.001f;
 
-    private const int MaxAliases = 64;
+    private const int MaxAliases = 128;
     private const int MaxObjects = 16;
+
+    // Decoration groupIds start after all normal group slots (MaxObjects * 3 subgroups each).
+    // Each decoration alias gets its own unique groupId so different decoration colors produce edges.
+    private const int DecorationGroupIdStart = MaxObjects * 3;
 
     private readonly Vector4[] _aliasColors        = new Vector4[MaxAliases];
     private readonly Vector4[] _aliasIds           = new Vector4[MaxAliases];
@@ -51,18 +55,19 @@ public sealed class OutlineColorTableBinder : MonoBehaviour
             if (obj == null) continue;
             h = h * 31 + obj.mainColor.GetHashCode();
             h = h * 31 + obj.outlineColor.GetHashCode();
-            if (obj.groupA != null)
-                foreach (var c in obj.groupA) h = h * 31 + c.GetHashCode();
-            if (obj.groupB != null)
-                foreach (var c in obj.groupB) h = h * 31 + c.GetHashCode();
+            if (obj.groupA      != null) foreach (var c in obj.groupA)      h = h * 31 + c.GetHashCode();
+            if (obj.groupB      != null) foreach (var c in obj.groupB)      h = h * 31 + c.GetHashCode();
+            if (obj.groupC      != null) foreach (var c in obj.groupC)      h = h * 31 + c.GetHashCode();
+            if (obj.decorations != null) foreach (var c in obj.decorations) h = h * 31 + c.GetHashCode();
         }
         return h;
     }
 
     private void Bake()
     {
-        int aliasCount  = 0;
-        int objectCount = 0;
+        int aliasCount        = 0;
+        int objectCount       = 0;
+        int decorGroupCounter = DecorationGroupIdStart;
 
         if (colorObjectTable != null && colorObjectTable.objects != null)
         {
@@ -114,6 +119,20 @@ public sealed class OutlineColorTableBinder : MonoBehaviour
                         _aliasColors[aliasCount] = new Vector4(c.r, c.g, c.b, 0f);
                         _aliasIds[aliasCount]    = new Vector4(groupIdC, objectCount, 0f, 0f);
                         aliasCount++;
+                    }
+
+                // Decorations: each color gets its own unique groupId so different decoration
+                // colors produce edges between each other. The isIsolated flag (z = 1) tells
+                // the shader to only match decorations against other decorations, never against
+                // group A/B/C pixels.
+                if (obj.decorations != null)
+                    foreach (var c in obj.decorations)
+                    {
+                        if (aliasCount >= MaxAliases) break;
+                        _aliasColors[aliasCount] = new Vector4(c.r, c.g, c.b, 0f);
+                        _aliasIds[aliasCount]    = new Vector4(decorGroupCounter, objectCount, 1f, 0f);
+                        aliasCount++;
+                        decorGroupCounter++;
                     }
 
                 objectCount++;

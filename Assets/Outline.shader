@@ -33,8 +33,8 @@ Shader "Hidden/Roystan/Outline Post Process"
             float4x4 _ClipToView;
 
             int _AliasCount;
-            float4 _AliasColors[64]; // rgb = color to match against
-            float4 _AliasIds[64];    // x = groupId, y = objectId (baked by C#)
+            float4 _AliasColors[128]; // rgb = color to match against
+            float4 _AliasIds[128];    // x = groupId, y = objectId, z = isIsolated (baked by C#)
 
             int _ObjectCount;
             float4 _ObjectMainColor[16];    // replacement color shown in final render
@@ -46,24 +46,27 @@ Shader "Hidden/Roystan/Outline Post Process"
                 return 1.0 / (_ZBufferParams.z * rawDepth + _ZBufferParams.w);
             }
 
-            // Returns the groupId and objectId for the closest alias match within
-            // _ColorTolerance, or -1/-1 when no alias matches.
-            // groupId encodes (objectIndex * 2 + subGroup) so same-group pixels compare equal
-            // and cross-group (or cross-object) pixels compare unequal — driving edge detection.
-            void GetAliasInfo(float3 pixel, out int groupId, out int objectId)
+            // Returns the groupId, objectId, and isIsolated flag for the closest alias match
+            // within _ColorTolerance, or -1/-1/0 when no alias matches.
+            // groupId encodes (objectIndex * 3 + subGroup) for normal groups, or a unique
+            // per-alias id for decorations. isIsolated=1 means decoration tier — edges only
+            // fire against other decoration pixels, never against group A/B/C pixels.
+            void GetAliasInfo(float3 pixel, out int groupId, out int objectId, out int isIsolated)
             {
-                groupId  = -1;
-                objectId = -1;
+                groupId    = -1;
+                objectId   = -1;
+                isIsolated = 0;
                 float bestDist = _ColorTolerance;
-                int count = min(_AliasCount, 64);
+                int count = min(_AliasCount, 128);
                 for (int i = 0; i < count; i++)
                 {
                     float dist = length(pixel - _AliasColors[i].rgb);
                     if (dist < bestDist)
                     {
-                        bestDist = dist;
-                        groupId  = (int)round(_AliasIds[i].x);
-                        objectId = (int)round(_AliasIds[i].y);
+                        bestDist   = dist;
+                        groupId    = (int)round(_AliasIds[i].x);
+                        objectId   = (int)round(_AliasIds[i].y);
+                        isIsolated = (int)round(_AliasIds[i].z);
                     }
                 }
             }
@@ -223,21 +226,25 @@ Shader "Hidden/Roystan/Outline Post Process"
                 float edgeNormal = sqrt(maxNormalDiff) > _NormalThreshold ? 1 : 0;
 
                 // --- Alias lookup ---
-                int centerGroupId, centerObjectId;
-                GetAliasInfo(centerColor.rgb, centerGroupId, centerObjectId);
+                int centerGroupId, centerObjectId, centerIsolated;
+                GetAliasInfo(centerColor.rgb, centerGroupId, centerObjectId, centerIsolated);
 
-                int ringGroupId [32];
-                int ringObjectId[32];
+                int ringGroupId  [32];
+                int ringObjectId [32];
+                int ringIsolated [32];
                 for (int c = 0; c < NUM_DIRS; c++)
-                    GetAliasInfo(ringColor[c].rgb, ringGroupId[c], ringObjectId[c]);
+                    GetAliasInfo(ringColor[c].rgb, ringGroupId[c], ringObjectId[c], ringIsolated[c]);
 
                 // --- Color edge ---
-                // Fires when center and ring belong to different alias groups (different groupIds).
-                // Requires both to be registered; unregistered pixels (groupId == -1) never trigger.
+                // Fires when center and ring belong to different alias groups (different groupIds)
+                // AND are in the same isolation tier. This prevents decoration pixels from
+                // producing edges against group A/B/C pixels (and vice versa).
                 float edgeColor = 0;
                 for (int e = 0; e < NUM_DIRS; e++)
                 {
-                    if (centerGroupId >= 0 && ringGroupId[e] >= 0 && ringGroupId[e] != centerGroupId)
+                    if (centerGroupId >= 0 && ringGroupId[e] >= 0
+                        && ringGroupId[e]   != centerGroupId
+                        && ringIsolated[e]  == centerIsolated)
                     {
                         edgeColor = 1;
                         break;
@@ -295,9 +302,10 @@ Shader "Hidden/Roystan/Outline Post Process"
                     }
                 }
 
-                // Replace registered alias pixels with their object's main color.
+                // Replace registered non-decoration pixels with their object's main color.
+                // Decoration pixels keep their raw color so each decoration shade stays visible.
                 float4 displayColor = centerColor;
-                if (centerObjectId >= 0)
+                if (centerObjectId >= 0 && centerIsolated == 0)
                     displayColor = _ObjectMainColor[centerObjectId];
 
                 if (winnerObjectId < 0 || edge < 0.5)

@@ -35,4 +35,7 @@ public sealed class ColorObject
 
     [Tooltip("Group C aliases. Lines are drawn between group-C and any other group of the same object.")]
     public List<Color> groupC = new();
+
+    [Tooltip("Decoration aliases. Lines are drawn between different decoration colors, but never between decorations and group A/B/C. Decoration pixels keep their original color in the render.")]
+    public List<Color> decorations = new();
 }
