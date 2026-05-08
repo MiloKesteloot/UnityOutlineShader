@@ -79,6 +79,15 @@ public sealed class OutlineColorTableBinder : MonoBehaviour
                 int groupIdA = objectCount * 2;
                 int groupIdB = objectCount * 2 + 1;
 
+                // mainColor is always an implicit groupA alias.
+                if (aliasCount < MaxAliases)
+                {
+                    Color mc = obj.mainColor;
+                    _aliasColors[aliasCount] = new Vector4(mc.r, mc.g, mc.b, 0f);
+                    _aliasIds[aliasCount]    = new Vector4(groupIdA, objectCount, 0f, 0f);
+                    aliasCount++;
+                }
+
                 if (obj.groupA != null)
                     foreach (var c in obj.groupA)
                     {
