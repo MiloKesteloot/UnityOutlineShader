@@ -27,6 +27,16 @@ ModelImporter:
   - first:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule
+      name: DoorHandleLeft
+    second: {fileID: 2100000, guid: 0baca798ca2e11f4783187ebd7509f34, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: DoorHandleRight
+    second: {fileID: 2100000, guid: d2d802353ebb8344bb5ca47e2af43992, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
       name: Emission Template
     second: {fileID: 2100000, guid: 57b1d4b792273aa4d8cbab434ae10a71, type: 2}
   - first:
