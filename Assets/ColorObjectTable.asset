@@ -13,17 +13,41 @@ MonoBehaviour:
   m_Name: ColorObjectTable
   m_EditorClassIdentifier: 
   objects:
-  - mainColor: {r: 0.7019608, g: 0.4, b: 0.14901961, a: 1}
+  - label: Lights
+    mainColor: {r: 0.972549, g: 0.9529412, b: 0.6431373, a: 1}
+    outlineColor: {r: 1, g: 0.80784315, b: 0.36862746, a: 1}
+    groupA: []
+    groupB: []
+    groupC: []
+    decorations: []
+  - label: Dark Wood
+    mainColor: {r: 0.44313726, g: 0.19215687, b: 0.09411765, a: 1}
+    outlineColor: {r: 0.32941177, g: 0.06666667, b: 0.023529412, a: 1}
+    groupA: []
+    groupB: []
+    groupC: []
+    decorations: []
+  - label: Boards
+    mainColor: {r: 0.7019608, g: 0.4, b: 0.14901961, a: 1}
     outlineColor: {r: 0.52156866, g: 0.09411765, b: 0.03137255, a: 1}
     groupA: []
     groupB:
     - {r: 1, g: 0, b: 1, a: 0}
-    - {r: 0.49803922, g: 0.45490196, b: 0.61960787, a: 0}
     groupC:
     - {r: 1, g: 1, b: 0, a: 0}
-  - mainColor: {r: 0.7921569, g: 0.7019608, b: 0.5686275, a: 1}
+    decorations: []
+  - label: Door Window
+    mainColor: {r: 0.49803922, g: 0.45490196, b: 0.61960787, a: 1}
+    outlineColor: {r: 1, g: 0, b: 0.9969902, a: 1}
+    groupA: []
+    groupB: []
+    groupC: []
+    decorations: []
+  - label: Ground
+    mainColor: {r: 0.7921569, g: 0.7019608, b: 0.5686275, a: 1}
     outlineColor: {r: 0.5, g: 0, b: 0, a: 1}
     groupA: []
     groupB:
     - {r: 0, g: 1, b: 1, a: 0}
     groupC: []
+    decorations: []

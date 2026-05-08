@@ -21,6 +21,8 @@ public sealed class ColorObjectTable : ScriptableObject
 [Serializable]
 public sealed class ColorObject
 {
+    public string label = "Color Object";
+
     [Tooltip("Color shown in the final render for every alias of this object.")]
     public Color mainColor = Color.white;
 
