@@ -287,7 +287,23 @@ Shader "Hidden/Roystan/Outline Post Process"
                     if (!foundValidNearSample)
                     {
                         if ((linearCenterDepth / max(allMinDepth, 1e-5)) > (1.0 + _DepthContactThreshold))
+                        {
                             winnerObjectId = -1;
+                        }
+                        else
+                        {
+                            // Center is at the near surface but may be misclassified due to
+                            // AA blending at the silhouette edge (sphere edge pixels pick up
+                            // background color but retain sphere depth). Re-run contact-edge
+                            // priority across ring samples at similar depth so the actual
+                            // foreground surface objectId wins instead of the blended center.
+                            for (int fb = 0; fb < NUM_DIRS; fb++)
+                            {
+                                bool notMeaningfullyFarther = (linearRingDepth[fb] / max(linearCenterDepth, 1e-5)) < (1.0 + _DepthContactThreshold);
+                                if (notMeaningfullyFarther && ringObjectId[fb] >= 0 && (winnerObjectId < 0 || ringObjectId[fb] < winnerObjectId))
+                                    winnerObjectId = ringObjectId[fb];
+                            }
+                        }
                     }
                 }
                 else
